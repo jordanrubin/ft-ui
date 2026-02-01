@@ -16,27 +16,34 @@ function generateId(): string {
 
 // Patterns for extracting metadata from text
 const IMPORTANCE_PATTERNS: Record<ImportanceLevel, RegExp[]> = {
-  high: [/\bhigh\b/i, /\bcritical\b/i, /\bkey\b/i, /\bcrucial\b/i],
-  medium: [/\bmed(?:ium)?\b/i, /\bmoderate\b/i],
-  low: [/\blow\b/i, /\bminor\b/i],
+  high: [/\bhigh\b/i, /\bcritical\b/i, /\bkey\b/i, /\bcrucial\b/i, /\bcentral\b/i],
+  medium: [/\bmed(?:ium)?\b/i, /\bmoderate\b/i, /\bsecondary\b/i],
+  low: [/\blow\b/i, /\bminor\b/i, /\bperipheral\b/i],
 };
 
 const STRENGTH_PATTERNS: Record<StrengthLevel, RegExp[]> = {
-  strong: [/\bstrong\b/i, /\bcompelling\b/i, /\bpowerful\b/i],
-  moderate: [/\bmoderate\b/i, /\bpartial\b/i],
-  weak: [/\bweak\b/i, /\btentative\b/i],
+  strong: [/\bstrong\b/i, /\bcompelling\b/i, /\bpowerful\b/i, /\bdecisive\b/i],
+  moderate: [/\bmoderate\b/i, /\bpartial\b/i, /\bqualified\b/i],
+  weak: [/\bweak\b/i, /\btentative\b/i, /\bspeculative\b/i],
 };
 
 const ANTITHESIS_TYPE_PATTERNS: Record<string, RegExp> = {
-  'rival thesis': /rival\s*thesis/i,
-  'selection critique': /selection\s*critique/i,
-  'boundary case': /boundary\s*case/i,
-  'causal inversion': /causal\s*inversion/i,
-  'scale dependence': /scale\s*depend/i,
-  'mechanism doubt': /mechanism\s*doubt/i,
+  'rival thesis': /rival\s*thesis|competing\s*(theory|view|position)/i,
+  'selection critique': /selection\s*(critique|bias)|sampling\s*(issue|problem|bias)/i,
+  'boundary case': /boundary\s*case|edge\s*case|limit\s*case/i,
+  'causal inversion': /causal\s*inversion|reverse\s*causation|cause.*effect/i,
+  'scale dependence': /scale\s*depend|scaling\s*(issue|problem)|different\s*scale/i,
+  'mechanism doubt': /mechanism\s*doubt|how.*actually.*work|underlying\s*mechanism/i,
 };
 
 function extractImportance(text: string): ImportanceLevel | undefined {
+  const lowerText = text.toLowerCase();
+
+  // Check explicit markers first
+  if (/\[high\]|\(high\)|high\s*importance|high\s*priority/i.test(text)) return 'high';
+  if (/\[med(?:ium)?\]|\(med(?:ium)?\)|medium\s*importance/i.test(text)) return 'medium';
+  if (/\[low\]|\(low\)|low\s*importance/i.test(text)) return 'low';
+
   for (const [level, patterns] of Object.entries(IMPORTANCE_PATTERNS)) {
     for (const pattern of patterns) {
       if (pattern.test(text)) {
@@ -48,6 +55,11 @@ function extractImportance(text: string): ImportanceLevel | undefined {
 }
 
 function extractStrength(text: string): StrengthLevel | undefined {
+  // Check explicit markers first
+  if (/\[strong\]|\(strong\)|strong\s*argument/i.test(text)) return 'strong';
+  if (/\[moderate\]|\(moderate\)/i.test(text)) return 'moderate';
+  if (/\[weak\]|\(weak\)|weak\s*argument/i.test(text)) return 'weak';
+
   for (const [level, patterns] of Object.entries(STRENGTH_PATTERNS)) {
     for (const pattern of patterns) {
       if (pattern.test(text)) {
@@ -81,80 +93,152 @@ function extractAntithesisTags(text: string): SubsectionTag[] {
 function extractAssumptions(content: string): string[] {
   const assumptions: string[] = [];
 
-  // Look for bullet points or numbered items that look like assumptions
-  const bulletPattern = /^[\s]*[-*]\s+(.+)$/gm;
+  // Look for bullet points or numbered items
+  const bulletPattern = /^[\s]*[-*•]\s+(.+)$/gm;
   const matches = content.matchAll(bulletPattern);
 
   for (const match of matches) {
     const item = match[1].trim();
-    // Filter to items that look like assumptions (short, declarative)
-    if (item.length > 10 && item.length < 200 && !item.includes('?')) {
+    // Filter to items that look like assumptions
+    if (item.length > 10 && item.length < 250) {
       assumptions.push(item);
     }
   }
 
-  return assumptions.slice(0, 5); // Limit to 5 assumptions
+  return assumptions.slice(0, 6);
 }
 
-function parseSection(
-  text: string,
-  type: SubsectionType
-): Subsection {
-  const lines = text.split('\n');
-  const titleLine = lines[0] || '';
-  const content = lines.slice(1).join('\n').trim();
+// Parse individual items from a section (numbered list, bullets, or bold headers)
+function parseListItems(content: string, type: SubsectionType): Subsection[] {
+  const items: Subsection[] = [];
 
-  // Extract title - remove markdown headers
-  const title = titleLine.replace(/^#+\s*/, '').trim();
+  // Try to find numbered items: "1. Title" or "1) Title"
+  const numberedPattern = /(?:^|\n)(\d+)[.\)]\s*\*?\*?([^*\n:]+)\*?\*?[:\s]*\n?([\s\S]*?)(?=(?:\n\d+[.\)])|$)/g;
 
-  // Extract metadata
-  const importance = extractImportance(titleLine + '\n' + content.slice(0, 200));
-  const strength = extractStrength(titleLine + '\n' + content.slice(0, 200));
-  const tags = type === 'antithesis' ? extractAntithesisTags(titleLine + '\n' + content) : [];
-  const assumptions = ['crux', 'thesis', 'assumption'].includes(type)
-    ? extractAssumptions(content)
-    : [];
+  let match;
+  while ((match = numberedPattern.exec(content)) !== null) {
+    const title = match[2].trim();
+    const itemContent = match[3]?.trim() || '';
 
-  return {
-    id: generateId(),
-    type,
-    title: title || type.charAt(0).toUpperCase() + type.slice(1),
-    content,
-    importance,
-    strength,
-    tags: tags.length > 0 ? tags : undefined,
-    assumptions: assumptions.length > 0 ? assumptions : undefined,
-    collapsed: false,
-  };
-}
+    if (title.length > 5) {
+      const tags = type === 'antithesis' ? extractAntithesisTags(title + ' ' + itemContent) : [];
+      const strength = extractStrength(title + ' ' + itemContent);
+      const importance = extractImportance(title + ' ' + itemContent);
+      const assumptions = ['crux', 'assumption'].includes(type) ? extractAssumptions(itemContent) : [];
 
-function detectSkillFromContent(content: string, operation?: string | null): string | null {
-  if (operation && operation.startsWith('@')) {
-    return operation;
+      items.push({
+        id: generateId(),
+        type,
+        title,
+        content: itemContent,
+        strength,
+        importance,
+        tags: tags.length > 0 ? tags : undefined,
+        assumptions: assumptions.length > 0 ? assumptions : undefined,
+        collapsed: false,
+      });
+    }
   }
 
-  // Try to detect from content patterns
-  if (/THESIS.*ANTITHES/is.test(content)) return '@antithesize';
-  if (/CRUX/i.test(content)) return '@excavate';
-  if (/FAILURE\s*MODE/i.test(content)) return '@stressify';
-  if (/DIMENSION|AXIS/i.test(content)) return '@dimensionalize';
-  if (/ALTERNATIVE|OPTION/i.test(content)) return '@diverge';
-  if (/STEP\s*\d|SCENARIO/i.test(content)) return '@simulate';
-  if (/NEGSPACE|MISSING|ABSENT/i.test(content)) return '@negspace';
-  if (/METAPHOR|MAPPING/i.test(content)) return '@metaphorize';
-  if (/RHYME|PARALLEL/i.test(content)) return '@rhyme';
-  if (/SYNTHESIS|INTEGRATION/i.test(content)) return '@synthesize';
+  // If no numbered items, try bold headers: "**Title**: content" or "**Title**\ncontent"
+  if (items.length === 0) {
+    const boldPattern = /\*\*([^*]+)\*\*[:\s]*([^*]*?)(?=\*\*|$)/g;
 
-  return null;
+    while ((match = boldPattern.exec(content)) !== null) {
+      const title = match[1].trim();
+      const itemContent = match[2]?.trim() || '';
+
+      if (title.length > 3 && title.length < 150) {
+        const tags = type === 'antithesis' ? extractAntithesisTags(title + ' ' + itemContent) : [];
+        const strength = extractStrength(title + ' ' + itemContent);
+        const importance = extractImportance(title + ' ' + itemContent);
+
+        items.push({
+          id: generateId(),
+          type,
+          title,
+          content: itemContent,
+          strength,
+          importance,
+          tags: tags.length > 0 ? tags : undefined,
+          collapsed: false,
+        });
+      }
+    }
+  }
+
+  // If still no items, try bullet points with meaningful content
+  if (items.length === 0) {
+    const bulletPattern = /(?:^|\n)[-*•]\s+(.+?)(?=\n[-*•]|\n\n|$)/gs;
+
+    while ((match = bulletPattern.exec(content)) !== null) {
+      const text = match[1].trim();
+
+      if (text.length > 20) {
+        // Try to extract title from first sentence or colon-separated
+        let title = text;
+        let itemContent = '';
+
+        const colonIdx = text.indexOf(':');
+        if (colonIdx > 0 && colonIdx < 80) {
+          title = text.slice(0, colonIdx).trim();
+          itemContent = text.slice(colonIdx + 1).trim();
+        } else if (text.length > 80) {
+          const sentenceEnd = text.search(/[.!?]\s/);
+          if (sentenceEnd > 0 && sentenceEnd < 100) {
+            title = text.slice(0, sentenceEnd + 1).trim();
+            itemContent = text.slice(sentenceEnd + 1).trim();
+          } else {
+            title = text.slice(0, 80) + '...';
+            itemContent = text;
+          }
+        }
+
+        const tags = type === 'antithesis' ? extractAntithesisTags(text) : [];
+        const strength = extractStrength(text);
+        const importance = extractImportance(text);
+
+        items.push({
+          id: generateId(),
+          type,
+          title,
+          content: itemContent,
+          strength,
+          importance,
+          tags: tags.length > 0 ? tags : undefined,
+          collapsed: false,
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
+function classifySectionType(title: string): SubsectionType {
+  const upperTitle = title.toUpperCase();
+
+  if (/THESIS|STEEL[- ]?MANNED|POSITION|CLAIM/i.test(upperTitle)) return 'thesis';
+  if (/ANTITHES|COUNTER|OBJECTION|CHALLENGE/i.test(upperTitle)) return 'antithesis';
+  if (/CRUX|PIVOT|HINGE|KEY\s*QUESTION/i.test(upperTitle)) return 'crux';
+  if (/ASSUMPTION|PRESUPPOS|TAKEN\s*FOR\s*GRANTED/i.test(upperTitle)) return 'assumption';
+  if (/FAILURE|STRESS|BREAK|EDGE\s*CASE/i.test(upperTitle)) return 'failure_mode';
+  if (/DIMENSION|AXIS|FACTOR|VARIABLE/i.test(upperTitle)) return 'dimension';
+  if (/ALTERNATIVE|OPTION|POSSIBILITY|PATH/i.test(upperTitle)) return 'alternative';
+  if (/STEP\s*\d|SCENARIO|SEQUENCE|TRACE/i.test(upperTitle)) return 'simulation_step';
+  if (/NEGSPACE|MISSING|ABSENT|GAP|VOID/i.test(upperTitle)) return 'negspace';
+  if (/METAPHOR|ANALOG|MAPPING|LIKE/i.test(upperTitle)) return 'metaphor';
+  if (/RHYME|PARALLEL|ECHO|SIMILAR/i.test(upperTitle)) return 'rhyme';
+  if (/SYNTHESIS|INTEGRATION|RECONCIL|BRIDGE/i.test(upperTitle)) return 'synthesis';
+
+  return 'generic';
 }
 
 export function parseSkillResponse(
   content: string,
   operation?: string | null
 ): ParsedResponse {
-  const skill = detectSkillFromContent(content, operation);
-
-  // Split content by markdown headers (## or #)
+  // Split content by markdown headers
   const headerPattern = /^(#{1,3})\s+(.+)$/gm;
   const sections: { level: number; title: string; start: number; end?: number }[] = [];
 
@@ -162,7 +246,7 @@ export function parseSkillResponse(
   while ((match = headerPattern.exec(content)) !== null) {
     sections.push({
       level: match[1].length,
-      title: match[2],
+      title: match[2].trim(),
       start: match.index,
     });
   }
@@ -172,8 +256,17 @@ export function parseSkillResponse(
     sections[i].end = sections[i + 1]?.start || content.length;
   }
 
+  // If no headers found, try to parse as a flat list
   if (sections.length === 0) {
-    // No clear structure, return as single generic section
+    const flatItems = parseListItems(content, 'generic');
+    if (flatItems.length > 0) {
+      return {
+        subsections: flatItems,
+        rawContent: content,
+      };
+    }
+
+    // No structure at all - return as single section
     return {
       subsections: [{
         id: generateId(),
@@ -186,86 +279,52 @@ export function parseSkillResponse(
     };
   }
 
-  // Classify sections based on their titles
+  // Parse sections
   const parsedSections: Subsection[] = [];
   let mainContent: Subsection | undefined;
-  let header: ParsedResponse['header'] | undefined;
 
   for (const section of sections) {
     const sectionText = content.slice(section.start, section.end);
-    const title = section.title.toUpperCase();
+    const sectionContent = sectionText.replace(/^#{1,3}\s+.+\n?/, '').trim();
+    const type = classifySectionType(section.title);
 
-    let type: SubsectionType = 'generic';
+    // Try to parse items within the section
+    const items = parseListItems(sectionContent, type);
 
-    // Classify by title
-    if (/THESIS|STEEL[- ]?MANNED/i.test(title)) {
-      type = 'thesis';
-    } else if (/ANTITHES/i.test(title)) {
-      type = 'antithesis';
-    } else if (/CRUX/i.test(title)) {
-      type = 'crux';
-    } else if (/ASSUMPTION/i.test(title)) {
-      type = 'assumption';
-    } else if (/FAILURE|STRESS/i.test(title)) {
-      type = 'failure_mode';
-    } else if (/DIMENSION|AXIS/i.test(title)) {
-      type = 'dimension';
-    } else if (/ALTERNATIVE|OPTION/i.test(title)) {
-      type = 'alternative';
-    } else if (/STEP\s*\d|SCENARIO/i.test(title)) {
-      type = 'simulation_step';
-    } else if (/NEGSPACE|MISSING|ABSENT/i.test(title)) {
-      type = 'negspace';
-    } else if (/METAPHOR|MAPPING/i.test(title)) {
-      type = 'metaphor';
-    } else if (/RHYME|PARALLEL/i.test(title)) {
-      type = 'rhyme';
-    } else if (/SYNTHESIS|INTEGRATION/i.test(title)) {
-      type = 'synthesis';
-    }
+    const parsed: Subsection = {
+      id: generateId(),
+      type,
+      title: section.title,
+      content: items.length > 0 ? '' : sectionContent,
+      children: items.length > 0 ? items : undefined,
+      collapsed: false,
+    };
 
-    const parsed = parseSection(sectionText, type);
-
-    // Thesis is usually the main content
+    // Thesis/main content goes to mainContent
     if (type === 'thesis' && !mainContent) {
       mainContent = parsed;
     } else {
-      parsedSections.push(parsed);
-    }
-  }
-
-  // Extract header info if skill detected
-  if (skill) {
-    // Try to extract the input from the first line if it's not a header
-    const firstNonHeaderLine = content.split('\n').find(
-      line => line.trim() && !line.startsWith('#')
-    );
-
-    header = {
-      skill,
-      input: firstNonHeaderLine?.slice(0, 100) || '',
-      compressed: firstNonHeaderLine?.slice(0, 50),
-    };
-  }
-
-  // Parse nested items within antithesis sections
-  for (const section of parsedSections) {
-    if (section.type === 'antithesis' && section.content) {
-      const children = parseAntithesisItems(section.content);
-      if (children.length > 0) {
-        section.children = children;
-        section.content = ''; // Clear parent content since it's in children
-      }
-    }
-
-    if (section.type === 'crux' && section.content) {
-      const children = parseCruxItems(section.content);
-      if (children.length > 0) {
-        section.children = children;
-        section.content = '';
+      // If section has children, make the parent a container
+      if (items.length > 0) {
+        parsedSections.push(...items);
+      } else if (sectionContent.length > 0) {
+        // Add section with its content
+        const sectionItems = parseListItems(sectionContent, type);
+        if (sectionItems.length > 0) {
+          parsedSections.push(...sectionItems);
+        } else {
+          parsedSections.push(parsed);
+        }
       }
     }
   }
+
+  // Build header info
+  const header = operation ? {
+    skill: operation,
+    input: '',
+    compressed: undefined,
+  } : undefined;
 
   return {
     header,
@@ -275,90 +334,19 @@ export function parseSkillResponse(
   };
 }
 
-function parseAntithesisItems(content: string): Subsection[] {
-  const items: Subsection[] = [];
-
-  // Split by numbered items or strong bullet points
-  const itemPattern = /(?:^|\n)(?:\d+\.\s*|\*\*|###?\s*)([^:\n]+)[:\n]([^]*?)(?=(?:\n(?:\d+\.\s*|\*\*|###?\s*))|$)/g;
-
-  let match;
-  while ((match = itemPattern.exec(content)) !== null) {
-    const title = match[1].trim();
-    const itemContent = match[2].trim();
-
-    const tags = extractAntithesisTags(title + ' ' + itemContent);
-    const strength = extractStrength(title + ' ' + itemContent);
-
-    items.push({
-      id: generateId(),
-      type: 'antithesis',
-      title,
-      content: itemContent,
-      strength,
-      tags: tags.length > 0 ? tags : undefined,
-      collapsed: true,
-    });
-  }
-
-  // If no structured items found, try simpler split
-  if (items.length === 0) {
-    const lines = content.split('\n').filter(l => l.trim());
-    for (const line of lines) {
-      if (line.length > 20) {
-        const tags = extractAntithesisTags(line);
-        const strength = extractStrength(line);
-
-        items.push({
-          id: generateId(),
-          type: 'antithesis',
-          title: line.slice(0, 80) + (line.length > 80 ? '...' : ''),
-          content: line,
-          strength,
-          tags: tags.length > 0 ? tags : undefined,
-          collapsed: true,
-        });
-      }
-    }
-  }
-
-  return items;
-}
-
-function parseCruxItems(content: string): Subsection[] {
-  const items: Subsection[] = [];
-
-  // Split by numbered items or bullet points
-  const itemPattern = /(?:^|\n)(?:\d+\.\s*|\*\s*|-\s*)([^\n]+)(?:\n(?!\d+\.|\*\s|-\s)([^]*?))?(?=(?:\n(?:\d+\.|\*\s|-\s))|$)/g;
-
-  let match;
-  while ((match = itemPattern.exec(content)) !== null) {
-    const title = match[1].trim();
-    const itemContent = (match[2] || '').trim();
-
-    const importance = extractImportance(title + ' ' + itemContent);
-    const assumptions = extractAssumptions(itemContent);
-
-    items.push({
-      id: generateId(),
-      type: 'crux',
-      title,
-      content: itemContent,
-      importance,
-      assumptions: assumptions.length > 0 ? assumptions : undefined,
-      collapsed: true,
-    });
-  }
-
-  return items;
-}
-
 // Check if content appears to be structured skill output
 export function isStructuredResponse(content: string): boolean {
-  // Check for common structural markers
+  // Check for markdown headers
   const hasHeaders = /^#{1,3}\s+/m.test(content);
-  const hasSkillMarkers = /THESIS|ANTITHES|CRUX|DIMENSION|ALTERNATIVE|FAILURE|STEP\s*\d|NEGSPACE|METAPHOR|RHYME|SYNTHESIS/i.test(content);
 
-  return hasHeaders && hasSkillMarkers;
+  // Check for skill-related keywords
+  const hasSkillMarkers = /THESIS|ANTITHES|CRUX|DIMENSION|ALTERNATIVE|FAILURE|SCENARIO|NEGSPACE|METAPHOR|RHYME|SYNTHESIS|ASSUMPTION/i.test(content);
+
+  // Check for structured lists
+  const hasNumberedList = /^\d+[.\)]\s+/m.test(content);
+  const hasBoldHeaders = /\*\*[^*]+\*\*/m.test(content);
+
+  return hasHeaders || (hasSkillMarkers && (hasNumberedList || hasBoldHeaders));
 }
 
 // Get suggested skills for a subsection based on its type

@@ -61,141 +61,235 @@ export default function SubsectionViewer({
     ? getSuggestedSkills(selectedSubsection.type)
     : [];
 
+  // Get section label based on content type
+  const getSectionLabel = () => {
+    const firstType = parsedResponse.subsections[0]?.type;
+    switch (firstType) {
+      case 'antithesis':
+        return 'ANTITHESES — CLICK TO EXPAND';
+      case 'crux':
+        return 'CRUXES — CLICK TO SELECT';
+      case 'assumption':
+        return 'ASSUMPTIONS — CLICK TO SELECT';
+      case 'alternative':
+        return 'ALTERNATIVES — CLICK TO SELECT';
+      case 'failure_mode':
+        return 'FAILURE MODES — CLICK TO SELECT';
+      case 'dimension':
+        return 'DIMENSIONS — CLICK TO SELECT';
+      default:
+        return 'SECTIONS — CLICK TO SELECT';
+    }
+  };
+
+  // Extract a short version of the input for the header
+  const getInputPreview = () => {
+    // Try to get from parent context or node content
+    const lines = node.content_full.split('\n');
+    const firstMeaningfulLine = lines.find(l => l.trim() && !l.startsWith('#'));
+    if (firstMeaningfulLine && firstMeaningfulLine.length < 100) {
+      return firstMeaningfulLine.trim();
+    }
+    return node.content_compressed || 'Response';
+  };
+
   if (!hasStructure) {
-    // No structured content, show raw
+    // No structured content - show as a simple formatted view
     return (
-      <div
-        style={{
+      <div style={{
+        background: '#f8fafc',
+        borderRadius: '12px',
+        padding: '20px',
+      }}>
+        {/* Header */}
+        <div style={{
+          background: '#18181b',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+        }}>
+          <div style={{
+            color: '#a1a1aa',
+            fontSize: '12px',
+            marginBottom: '6px',
+          }}>
+            {node.operation || 'response'}
+          </div>
+          <div style={{
+            color: '#ffffff',
+            fontSize: '16px',
+            fontWeight: 500,
+            lineHeight: 1.4,
+          }}>
+            "{getInputPreview()}"
+          </div>
+        </div>
+
+        {/* Content */}
+        <div style={{
+          background: '#ffffff',
+          borderRadius: '12px',
           padding: '16px',
-          background: '#0d1117',
-          borderRadius: '6px',
-          color: '#e0e0e0',
+          border: '1px solid #e5e7eb',
+          color: '#374151',
           fontSize: '14px',
-          lineHeight: '1.6',
+          lineHeight: 1.7,
           whiteSpace: 'pre-wrap',
-          maxHeight: '400px',
-          overflow: 'auto',
-        }}
-      >
-        {node.content_full}
+        }}>
+          {node.content_full}
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      {/* Header */}
-      {parsedResponse.header && (
+    <div style={{
+      background: '#f8fafc',
+      borderRadius: '12px',
+      padding: '20px',
+    }}>
+      {/* Header card */}
+      <div style={{
+        background: '#18181b',
+        borderRadius: '12px',
+        padding: '16px 20px',
+        marginBottom: '16px',
+      }}>
+        <div style={{
+          color: '#a1a1aa',
+          fontSize: '12px',
+          marginBottom: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          {node.operation || '@skill'}
+          {parsedResponse.header?.compressed && (
+            <>
+              <span style={{ color: '#52525b' }}>→</span>
+              <span>compressed</span>
+            </>
+          )}
+        </div>
+        <div style={{
+          color: '#ffffff',
+          fontSize: '16px',
+          fontWeight: 500,
+          lineHeight: 1.4,
+        }}>
+          "{getInputPreview()}"
+        </div>
+      </div>
+
+      {/* Main content (thesis) */}
+      {parsedResponse.mainContent && (
         <div
           style={{
-            background: '#1a1a1a',
-            borderRadius: '8px',
-            padding: '16px',
+            background: '#27272a',
+            borderRadius: '12px',
+            padding: '16px 20px',
             marginBottom: '16px',
+            border: selectedId === parsedResponse.mainContent.id
+              ? '2px solid #3b82f6'
+              : '2px solid transparent',
+            cursor: 'pointer',
+            transition: 'border-color 0.15s ease',
           }}
+          onClick={() => handleSelect(parsedResponse.mainContent!.id)}
         >
-          <div style={{ color: '#888', fontSize: '12px', marginBottom: '4px' }}>
-            {parsedResponse.header.skill}
-            {parsedResponse.header.compressed && ' \u2192 compressed'}
+          <div style={{
+            color: '#a1a1aa',
+            fontSize: '11px',
+            fontWeight: 600,
+            marginBottom: '10px',
+            letterSpacing: '0.5px',
+            textTransform: 'uppercase',
+          }}>
+            {parsedResponse.mainContent.title}
           </div>
-          <div style={{ color: '#fff', fontSize: '16px', fontWeight: 500 }}>
-            "{parsedResponse.header.input}"
+          <div style={{
+            color: '#e5e7eb',
+            fontSize: '14px',
+            lineHeight: 1.7,
+          }}>
+            {parsedResponse.mainContent.content}
           </div>
+
+          {/* Skill buttons when selected */}
+          {selectedId === parsedResponse.mainContent.id && (
+            <div style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid #3f3f46',
+            }}>
+              <div style={{
+                fontSize: '12px',
+                color: '#ef4444',
+                marginBottom: '10px',
+                fontWeight: 500,
+              }}>
+                Run skill on selection:
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {suggestedSkills.map((skillName) => (
+                  <button
+                    key={skillName}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSkillRun(skillName, parsedResponse.mainContent!.content);
+                    }}
+                    disabled={isRunning}
+                    style={{
+                      padding: '8px 14px',
+                      background: '#3f3f46',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: 500,
+                      cursor: isRunning ? 'not-allowed' : 'pointer',
+                      opacity: isRunning ? 0.6 : 1,
+                      transition: 'background 0.15s ease',
+                    }}
+                    onMouseOver={(e) => !isRunning && (e.currentTarget.style.background = '#52525b')}
+                    onMouseOut={(e) => (e.currentTarget.style.background = '#3f3f46')}
+                  >
+                    {skillName}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* How to use hint */}
-      {!selectedId && (
-        <div
-          style={{
-            background: '#fffde7',
-            border: '1px solid #fff9c4',
-            borderRadius: '6px',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            fontSize: '13px',
-            color: '#5d4037',
-          }}
-        >
-          <strong>How to use:</strong> Click a {parsedResponse.mainContent ? 'section' : 'item'} to select it,
-          then click an operation button to copy the prompt. Paste in chat to run.
-        </div>
-      )}
-
-      {/* Main content (thesis) */}
-      {parsedResponse.mainContent && (
-        <div style={{ marginBottom: '16px' }}>
-          <div
-            style={{
-              background: '#2d2d2d',
-              borderRadius: '8px',
-              padding: '16px',
-              border: selectedId === parsedResponse.mainContent.id ? '2px solid #2196f3' : '2px solid transparent',
-              cursor: 'pointer',
-            }}
-            onClick={() => handleSelect(parsedResponse.mainContent!.id)}
-          >
-            <div style={{ color: '#888', fontSize: '11px', fontWeight: 600, marginBottom: '8px', letterSpacing: '0.5px' }}>
-              {parsedResponse.mainContent.title.toUpperCase()}
-            </div>
-            <div style={{ color: '#e0e0e0', fontSize: '14px', lineHeight: 1.6 }}>
-              {parsedResponse.mainContent.content}
-            </div>
-
-            {/* Skill buttons when selected */}
-            {selectedId === parsedResponse.mainContent.id && (
-              <div style={{ marginTop: '12px', borderTop: '1px solid #444', paddingTop: '12px' }}>
-                <div style={{ fontSize: '11px', color: '#888', marginBottom: '8px' }}>
-                  Run skill on selection:
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {suggestedSkills.map((skillName) => (
-                    <button
-                      key={skillName}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleSkillRun(skillName, parsedResponse.mainContent!.content);
-                      }}
-                      disabled={isRunning}
-                      style={{
-                        padding: '6px 12px',
-                        background: '#3d3d3d',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        cursor: isRunning ? 'not-allowed' : 'pointer',
-                        opacity: isRunning ? 0.6 : 1,
-                      }}
-                    >
-                      {skillName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+      {!selectedId && parsedResponse.subsections.length > 0 && (
+        <div style={{
+          background: '#fef9c3',
+          border: '1px solid #fde047',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          marginBottom: '16px',
+          fontSize: '14px',
+          color: '#713f12',
+          lineHeight: 1.5,
+        }}>
+          <strong style={{ color: '#a16207' }}>How to use:</strong>{' '}
+          Click a {parsedResponse.subsections[0]?.type || 'section'} to select it, then click an operation button to copy the prompt. Paste in chat to run.
         </div>
       )}
 
       {/* Subsections header */}
       {parsedResponse.subsections.length > 0 && (
-        <div
-          style={{
-            color: '#666',
-            fontSize: '11px',
-            fontWeight: 600,
-            marginBottom: '8px',
-            letterSpacing: '0.5px',
-            textTransform: 'uppercase',
-          }}
-        >
-          {parsedResponse.subsections[0]?.type === 'antithesis'
-            ? 'ANTITHESES \u2014 CLICK TO EXPAND'
-            : parsedResponse.subsections[0]?.type === 'crux'
-            ? 'CRUXES \u2014 CLICK TO SELECT'
-            : 'SECTIONS \u2014 CLICK TO SELECT'}
+        <div style={{
+          color: '#6b7280',
+          fontSize: '12px',
+          fontWeight: 600,
+          marginBottom: '12px',
+          letterSpacing: '0.5px',
+        }}>
+          {getSectionLabel()}
         </div>
       )}
 
@@ -215,36 +309,43 @@ export default function SubsectionViewer({
       </div>
 
       {/* Toggle raw view */}
-      <div style={{ marginTop: '16px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>
+      <div style={{
+        marginTop: '20px',
+        paddingTop: '16px',
+        borderTop: '1px solid #e5e7eb',
+      }}>
         <button
           onClick={() => setShowRaw(!showRaw)}
           style={{
             background: 'none',
             border: 'none',
-            color: '#666',
-            fontSize: '12px',
+            color: '#6b7280',
+            fontSize: '13px',
             cursor: 'pointer',
             padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
           }}
         >
-          {showRaw ? '\u25BC Hide' : '\u25B6 Show'} raw response
+          <span style={{ fontSize: '10px' }}>{showRaw ? '▼' : '▶'}</span>
+          {showRaw ? 'Hide' : 'Show'} raw response
         </button>
 
         {showRaw && (
-          <div
-            style={{
-              marginTop: '8px',
-              padding: '12px',
-              background: '#0d1117',
-              borderRadius: '6px',
-              color: '#8b949e',
-              fontSize: '12px',
-              lineHeight: 1.5,
-              whiteSpace: 'pre-wrap',
-              maxHeight: '200px',
-              overflow: 'auto',
-            }}
-          >
+          <div style={{
+            marginTop: '12px',
+            padding: '16px',
+            background: '#f1f5f9',
+            borderRadius: '8px',
+            color: '#475569',
+            fontSize: '13px',
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+            maxHeight: '300px',
+            overflow: 'auto',
+            fontFamily: 'ui-monospace, monospace',
+          }}>
             {parsedResponse.rawContent}
           </div>
         )}

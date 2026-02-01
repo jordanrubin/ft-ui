@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Subsection, SubsectionTag, SkillInfo } from '../types';
+import type { Subsection, SkillInfo } from '../types';
 
 interface SubsectionCardProps {
   subsection: Subsection;
@@ -8,28 +8,16 @@ interface SubsectionCardProps {
   onSkillRun?: (skillName: string, content: string) => void;
   suggestedSkills?: string[];
   skills?: SkillInfo[];
-  depth?: number;
 }
 
-const TAG_COLORS: Record<SubsectionTag['color'], { bg: string; text: string }> = {
-  red: { bg: '#fef2f2', text: '#dc2626' },
-  orange: { bg: '#fff7ed', text: '#ea580c' },
-  yellow: { bg: '#fefce8', text: '#ca8a04' },
-  blue: { bg: '#eff6ff', text: '#2563eb' },
-  purple: { bg: '#faf5ff', text: '#9333ea' },
-  gray: { bg: '#f3f4f6', text: '#4b5563' },
-};
-
-const IMPORTANCE_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  high: { bg: '#fef2f2', text: '#dc2626', icon: '\u26A1' },
-  medium: { bg: '#fff7ed', text: '#ea580c', icon: '\u223C' },
-  low: { bg: '#f3f4f6', text: '#6b7280', icon: '\u25CB' },
-};
-
-const STRENGTH_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  strong: { bg: '#fef2f2', text: '#dc2626', icon: '\u26A1' },
-  moderate: { bg: '#f3f4f6', text: '#6b7280', icon: '\u25C7' },
-  weak: { bg: '#f3f4f6', text: '#9ca3af', icon: '\u25CB' },
+// Tag styling based on type
+const TAG_STYLES: Record<string, { bg: string; text: string }> = {
+  'rival thesis': { bg: '#fef2f2', text: '#b91c1c' },
+  'selection critique': { bg: '#fff7ed', text: '#c2410c' },
+  'boundary case': { bg: '#fef9c3', text: '#a16207' },
+  'causal inversion': { bg: '#dbeafe', text: '#1d4ed8' },
+  'scale dependence': { bg: '#f3e8ff', text: '#7c3aed' },
+  'mechanism doubt': { bg: '#f3f4f6', text: '#4b5563' },
 };
 
 export default function SubsectionCard({
@@ -39,19 +27,11 @@ export default function SubsectionCard({
   onSkillRun,
   suggestedSkills = [],
   skills = [],
-  depth = 0,
 }: SubsectionCardProps) {
-  const [isExpanded, setIsExpanded] = useState(!subsection.collapsed);
   const [showAssumptions, setShowAssumptions] = useState(false);
 
-  const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleClick = () => {
     onSelect(subsection.id);
-  };
-
-  const handleToggleExpand = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsExpanded(!isExpanded);
   };
 
   const handleSkillClick = (skillName: string, e: React.MouseEvent) => {
@@ -62,227 +42,224 @@ export default function SubsectionCard({
     }
   };
 
-  const importanceInfo = subsection.importance ? IMPORTANCE_COLORS[subsection.importance] : null;
-  const strengthInfo = subsection.strength ? STRENGTH_COLORS[subsection.strength] : null;
+  // Get tag style
+  const getTagStyle = (label: string) => {
+    const style = TAG_STYLES[label.toLowerCase()];
+    return style || { bg: '#f3f4f6', text: '#4b5563' };
+  };
 
-  // Filter suggested skills to only show those that exist
-  const availableSkills = suggestedSkills.filter(
-    s => skills.some(skill => skill.display_name === s || skill.name === s.replace('@', ''))
-  );
+  // Render importance/strength badge
+  const renderBadge = () => {
+    if (subsection.importance) {
+      const isHigh = subsection.importance === 'high';
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            fontSize: '12px',
+            fontWeight: 600,
+            background: isHigh ? '#fef2f2' : '#f9fafb',
+            color: isHigh ? '#dc2626' : '#6b7280',
+          }}>
+            {isHigh && <span style={{ color: '#eab308' }}>⚡</span>}
+            {subsection.importance}
+          </span>
+        </div>
+      );
+    }
+    if (subsection.strength) {
+      const isStrong = subsection.strength === 'strong';
+      return (
+        <span style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          padding: '2px 8px',
+          borderRadius: '4px',
+          fontSize: '12px',
+          fontWeight: 600,
+          background: isStrong ? '#fef2f2' : '#f9fafb',
+          color: isStrong ? '#dc2626' : '#6b7280',
+        }}>
+          {isStrong && <span style={{ color: '#eab308' }}>⚡</span>}
+          {subsection.strength}
+        </span>
+      );
+    }
+    return null;
+  };
 
   return (
     <div
       onClick={handleClick}
       style={{
-        background: isSelected ? '#e3f2fd' : '#fff',
-        border: `2px solid ${isSelected ? '#2196f3' : '#e0e0e0'}`,
-        borderRadius: '8px',
-        marginBottom: '8px',
-        marginLeft: depth * 16,
+        background: '#ffffff',
+        border: isSelected ? '2px solid #3b82f6' : '1px solid #e5e7eb',
+        borderRadius: '12px',
+        marginBottom: '12px',
         cursor: 'pointer',
         transition: 'all 0.15s ease',
-        boxShadow: isSelected ? '0 2px 8px rgba(33, 150, 243, 0.2)' : 'none',
+        boxShadow: isSelected
+          ? '0 4px 12px rgba(59, 130, 246, 0.15)'
+          : '0 1px 3px rgba(0, 0, 0, 0.05)',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          padding: '12px 16px',
+      {/* Main content area */}
+      <div style={{ padding: '16px' }}>
+        {/* Top row: tags + badge */}
+        <div style={{
           display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'flex-start',
-          gap: '12px',
-        }}
-      >
-        {/* Expand/collapse toggle */}
-        {(subsection.content || subsection.children?.length) && (
-          <button
-            onClick={handleToggleExpand}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '2px',
-              color: '#666',
-              fontSize: '12px',
-              flexShrink: 0,
-            }}
-          >
-            {isExpanded ? '\u25BC' : '\u25B6'}
-          </button>
-        )}
-
-        {/* Content */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* Tags row */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
-            {subsection.tags?.map((tag, i) => (
-              <span
-                key={i}
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  background: TAG_COLORS[tag.color]?.bg || '#f3f4f6',
-                  color: TAG_COLORS[tag.color]?.text || '#4b5563',
-                }}
-              >
-                {tag.label}
-              </span>
-            ))}
-
-            {strengthInfo && (
-              <span
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  fontSize: '11px',
-                  fontWeight: 500,
-                  background: strengthInfo.bg,
-                  color: strengthInfo.text,
-                }}
-              >
-                {strengthInfo.icon} {subsection.strength}
-              </span>
-            )}
-          </div>
-
-          {/* Title */}
-          <div
-            style={{
-              fontWeight: 600,
-              fontSize: '14px',
-              color: '#1a1a1a',
-              lineHeight: 1.4,
-            }}
-          >
-            {subsection.title}
-          </div>
-
-          {/* Expanded content */}
-          {isExpanded && subsection.content && (
-            <div
-              style={{
-                marginTop: '8px',
-                fontSize: '13px',
-                color: '#4a4a4a',
-                lineHeight: 1.6,
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {subsection.content}
-            </div>
-          )}
-
-          {/* Assumptions toggle */}
-          {subsection.assumptions && subsection.assumptions.length > 0 && (
-            <div style={{ marginTop: '8px' }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowAssumptions(!showAssumptions);
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#666',
-                  fontSize: '12px',
-                  padding: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                }}
-              >
-                {showAssumptions ? '\u25BC' : '\u25B6'} {showAssumptions ? 'hide' : 'show'} assumptions
-              </button>
-
-              {showAssumptions && (
-                <ul
+          marginBottom: '8px',
+        }}>
+          {/* Tags */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {subsection.tags?.map((tag, i) => {
+              const style = getTagStyle(tag.label);
+              return (
+                <span
+                  key={i}
                   style={{
-                    margin: '8px 0 0 0',
-                    paddingLeft: '20px',
+                    padding: '3px 10px',
+                    borderRadius: '4px',
                     fontSize: '12px',
-                    color: '#666',
-                    lineHeight: 1.5,
+                    fontWeight: 500,
+                    background: style.bg,
+                    color: style.text,
                   }}
                 >
-                  {subsection.assumptions.map((assumption, i) => (
-                    <li key={i} style={{ marginBottom: '4px' }}>
-                      {assumption}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+                  {tag.label}
+                </span>
+              );
+            })}
+          </div>
 
-          {/* Skill action buttons (shown when selected) */}
-          {isSelected && availableSkills.length > 0 && (
-            <div style={{ marginTop: '12px', borderTop: '1px solid #e0e0e0', paddingTop: '12px' }}>
-              <div style={{ fontSize: '11px', color: '#666', marginBottom: '8px' }}>
-                Copy prompt & paste in chat:
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {availableSkills.map((skillName) => (
-                  <button
-                    key={skillName}
-                    onClick={(e) => handleSkillClick(skillName, e)}
-                    style={{
-                      padding: '6px 12px',
-                      background: '#1a1a1a',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      transition: 'background 0.15s ease',
-                    }}
-                    onMouseOver={(e) => (e.currentTarget.style.background = '#333')}
-                    onMouseOut={(e) => (e.currentTarget.style.background = '#1a1a1a')}
-                  >
-                    {skillName}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Badge */}
+          {renderBadge()}
         </div>
 
-        {/* Importance indicator */}
-        {importanceInfo && (
-          <div
-            style={{
-              padding: '4px 8px',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 500,
-              background: importanceInfo.bg,
-              color: importanceInfo.text,
-              flexShrink: 0,
-            }}
-          >
-            {importanceInfo.icon} {subsection.importance}
+        {/* Title */}
+        <div style={{
+          fontWeight: 600,
+          fontSize: '15px',
+          color: '#111827',
+          lineHeight: 1.5,
+          marginBottom: subsection.content ? '8px' : 0,
+        }}>
+          {subsection.title}
+        </div>
+
+        {/* Description/content */}
+        {subsection.content && (
+          <div style={{
+            fontSize: '14px',
+            color: '#6b7280',
+            lineHeight: 1.6,
+          }}>
+            {subsection.content}
+          </div>
+        )}
+
+        {/* Assumptions toggle */}
+        {subsection.assumptions && subsection.assumptions.length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowAssumptions(!showAssumptions);
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#6b7280',
+                fontSize: '13px',
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span style={{ fontSize: '10px' }}>{showAssumptions ? '▼' : '▶'}</span>
+              {showAssumptions ? 'hide assumptions' : 'show assumptions'}
+            </button>
+
+            {showAssumptions && (
+              <ul style={{
+                margin: '10px 0 0 0',
+                paddingLeft: '8px',
+                listStyle: 'none',
+              }}>
+                {subsection.assumptions.map((assumption, i) => (
+                  <li
+                    key={i}
+                    style={{
+                      fontSize: '13px',
+                      color: '#4b5563',
+                      lineHeight: 1.6,
+                      marginBottom: '4px',
+                      paddingLeft: '12px',
+                      position: 'relative',
+                    }}
+                  >
+                    <span style={{
+                      position: 'absolute',
+                      left: 0,
+                      color: '#9ca3af',
+                    }}>·</span>
+                    {assumption}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
       </div>
 
-      {/* Children (nested subsections) */}
-      {isExpanded && subsection.children && subsection.children.length > 0 && (
-        <div style={{ padding: '0 16px 12px' }}>
-          {subsection.children.map((child) => (
-            <SubsectionCard
-              key={child.id}
-              subsection={child}
-              isSelected={isSelected}
-              onSelect={onSelect}
-              onSkillRun={onSkillRun}
-              suggestedSkills={suggestedSkills}
-              skills={skills}
-              depth={depth + 1}
-            />
-          ))}
+      {/* Skill action buttons (shown when selected) */}
+      {isSelected && suggestedSkills.length > 0 && (
+        <div style={{
+          padding: '12px 16px',
+          borderTop: '1px solid #f3f4f6',
+          background: '#fafafa',
+          borderRadius: '0 0 12px 12px',
+        }}>
+          <div style={{
+            fontSize: '12px',
+            color: '#ef4444',
+            marginBottom: '10px',
+            fontWeight: 500,
+          }}>
+            Copy prompt & paste in chat:
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {suggestedSkills.map((skillName) => (
+              <button
+                key={skillName}
+                onClick={(e) => handleSkillClick(skillName, e)}
+                style={{
+                  padding: '8px 14px',
+                  background: '#18181b',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseOver={(e) => (e.currentTarget.style.background = '#27272a')}
+                onMouseOut={(e) => (e.currentTarget.style.background = '#18181b')}
+              >
+                {skillName}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
