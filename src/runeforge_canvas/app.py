@@ -64,6 +64,7 @@ class RuneforgeCanvas(App):
     BINDINGS = [
         Binding("q", "quit", "quit"),
         Binding("s", "save", "save"),
+        Binding("l", "load", "load"),
         Binding("e", "export", "export"),
         Binding("x", "execute", "execute"),
         Binding("r", "review", "review"),
@@ -134,12 +135,15 @@ class RuneforgeCanvas(App):
 
     async def on_unmount(self) -> None:
         """cleanup on unmount."""
-        if self._client:
-            await self._client.__aexit__(None, None, None)
+        # save first before any cleanup that might fail
+        self._auto_save()
 
-        # auto-save
-        if self.canvas_path and self.canvas.root_id:
-            self.canvas.save(self.canvas_path)
+        # cleanup client - wrap in try/except to avoid runtime errors on quit
+        if self._client:
+            try:
+                await self._client.__aexit__(None, None, None)
+            except Exception:
+                pass  # ignore cleanup errors on quit
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """handle root input submission."""
@@ -154,6 +158,7 @@ class RuneforgeCanvas(App):
         self.canvas.add_node(root)
         self._hide_start_prompt()
         self._refresh_all()
+        self._auto_save()  # save immediately after root creation
 
     def _show_start_prompt(self) -> None:
         """show the start prompt, hide canvas widgets."""
@@ -341,9 +346,31 @@ class RuneforgeCanvas(App):
         self.query_one("#active-path", ActivePath).refresh_path(self.canvas)
 
     def _auto_save(self) -> None:
-        """auto-save if path is set."""
-        if self.canvas_path:
+        """auto-save after every change. creates default path if needed."""
+        if not self.canvas.root_id:
+            return  # nothing to save
+
+        if not self.canvas_path:
+            # create default path based on first few words of root
+            save_dir = Path.home() / ".runeforge-canvas"
+            save_dir.mkdir(parents=True, exist_ok=True)
+
+            # generate name from root content
+            root = self.canvas.nodes.get(self.canvas.root_id)
+            if root:
+                words = root.content_compressed.split()[:3]
+                name = "-".join(w.lower()[:10] for w in words if w.isalnum() or w[0].isalnum())
+                name = name or "untitled"
+            else:
+                name = "untitled"
+
+            self.canvas_path = save_dir / f"{name}.json"
+            self.canvas.name = name
+
+        try:
             self.canvas.save(self.canvas_path)
+        except Exception as e:
+            self.notify(f"auto-save failed: {e}", severity="error")
 
     def action_save(self) -> None:
         """save the canvas."""
@@ -361,6 +388,35 @@ class RuneforgeCanvas(App):
         self.canvas = Canvas(name="untitled")
         self.canvas_path = None
         self._show_start_prompt()
+
+    def action_load(self) -> None:
+        """load a canvas from ~/.runeforge-canvas/."""
+        save_dir = Path.home() / ".runeforge-canvas"
+        if not save_dir.exists():
+            self.notify("no saved canvases found", severity="warning")
+            return
+
+        # list available canvases
+        canvases = sorted(save_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not canvases:
+            self.notify("no saved canvases found", severity="warning")
+            return
+
+        # load most recent
+        most_recent = canvases[0]
+        try:
+            self.canvas = Canvas.load(most_recent)
+            self.canvas_path = most_recent
+            self._hide_start_prompt()
+            self._refresh_all()
+            self.notify(f"loaded {most_recent.name}")
+
+            # show other available canvases
+            if len(canvases) > 1:
+                others = ", ".join(c.stem for c in canvases[1:5])
+                self.notify(f"other canvases: {others}...", severity="information")
+        except Exception as e:
+            self.notify(f"failed to load: {e}", severity="error")
 
     def action_export(self) -> None:
         """export the active path as flattened text (copies to clipboard)."""
