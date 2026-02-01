@@ -10,7 +10,7 @@ from textual.message import Message
 from textual.binding import Binding
 from rich.text import Text
 
-from ..models import Canvas, CanvasNode, NodeType
+from ...core.models import Canvas, CanvasNode, NodeType
 
 
 class NodeClicked(Message):

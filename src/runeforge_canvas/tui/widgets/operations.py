@@ -9,7 +9,7 @@ from textual.containers import Horizontal, Vertical, Grid
 from textual.widgets import Button, Static, Input
 from textual.message import Message
 
-from ..skills import Skill
+from ...core.skills import Skill
 
 
 class RunOperation(Message):

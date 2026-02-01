@@ -4,7 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.skills import (
+from runeforge_canvas.core.skills import (
     Skill,
     SkillInvocation,
     SkillChain,

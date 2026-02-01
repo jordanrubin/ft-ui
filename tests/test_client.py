@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from runeforge_canvas.client import ClaudeClient
+from runeforge_canvas.core.client import ClaudeClient
 
 
 class TestClaudeClient:
@@ -26,7 +26,7 @@ class TestClaudeClient:
     @pytest.mark.asyncio
     async def test_complete_creates_fresh_client(self):
         """each complete() creates a fresh SDK client."""
-        with patch("runeforge_canvas.client.ClaudeSDKClient") as MockSDK:
+        with patch("runeforge_canvas.core.client.ClaudeSDKClient") as MockSDK:
             # setup mock
             mock_instance = AsyncMock()
             mock_instance.connect = AsyncMock()
@@ -59,7 +59,7 @@ class TestClaudeClient:
     @pytest.mark.asyncio
     async def test_complete_handles_disconnect_error(self):
         """complete() ignores disconnect errors."""
-        with patch("runeforge_canvas.client.ClaudeSDKClient") as MockSDK:
+        with patch("runeforge_canvas.core.client.ClaudeSDKClient") as MockSDK:
             mock_instance = AsyncMock()
             mock_instance.connect = AsyncMock()
             mock_instance.disconnect = AsyncMock(side_effect=Exception("cleanup failed"))
@@ -85,7 +85,7 @@ class TestClaudeClient:
     @pytest.mark.asyncio
     async def test_complete_returns_no_response_on_empty(self):
         """complete() returns placeholder when no text received."""
-        with patch("runeforge_canvas.client.ClaudeSDKClient") as MockSDK:
+        with patch("runeforge_canvas.core.client.ClaudeSDKClient") as MockSDK:
             mock_instance = AsyncMock()
             mock_instance.connect = AsyncMock()
             mock_instance.disconnect = AsyncMock()

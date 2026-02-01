@@ -15,9 +15,14 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
 ]
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+]
 
 [project.scripts]
 runeforge-canvas = "runeforge_canvas.__main__:main"
+runeforge-api = "runeforge_canvas.api.server:main"
 
 [build-system]
 requires = ["hatchling"]

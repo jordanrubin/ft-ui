@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from .app import run
+from .tui.app import run
 
 
 def main():

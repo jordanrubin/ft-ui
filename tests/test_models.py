@@ -4,7 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.models import Canvas, CanvasNode, NodeType
+from runeforge_canvas.core.models import Canvas, CanvasNode, NodeType
 
 
 class TestCanvasNode:

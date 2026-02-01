@@ -16,9 +16,9 @@ from textual.containers import Vertical
 from textual.widgets import Header, Footer, Static, Input
 from textual.binding import Binding
 
-from .models import Canvas, CanvasNode
-from .skills import SkillLoader, Skill, SkillChain, get_default_loader
-from .client import ClaudeClient, MockClient
+from ..core.models import Canvas, CanvasNode
+from ..core.skills import SkillLoader, Skill, SkillChain, get_default_loader
+from ..core.client import ClaudeClient, MockClient
 from .widgets.minimap import Minimap, NodeClicked
 from .widgets.path import ActivePath, NodeWidget
 from .widgets.operations import OperationsPanel, RunOperation, RunChain, AddNote, RunChat

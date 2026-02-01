@@ -13,7 +13,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.text import Text
 
-from ..models import Canvas, CanvasNode, NodeType
+from ...core.models import Canvas, CanvasNode, NodeType
 
 
 class NodeExpanded(Message):

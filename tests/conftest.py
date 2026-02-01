@@ -4,8 +4,8 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.models import Canvas, CanvasNode
-from runeforge_canvas.skills import Skill
+from runeforge_canvas.core.models import Canvas, CanvasNode
+from runeforge_canvas.core.skills import Skill
 
 
 @pytest.fixture
