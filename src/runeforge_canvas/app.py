@@ -28,6 +28,7 @@ class RuneforgeCanvas(App):
     """main application."""
 
     TITLE = "runeforge canvas"
+    SUB_TITLE = "~/.runeforge-canvas/"
 
     CSS = """
     Screen {
@@ -123,6 +124,7 @@ class RuneforgeCanvas(App):
         # load canvas if path provided
         if self.canvas_path and self.canvas_path.exists():
             self.canvas = Canvas.load(self.canvas_path)
+            self.sub_title = str(self.canvas_path)
             self._hide_start_prompt()
             self._refresh_all()
         else:
@@ -350,7 +352,9 @@ class RuneforgeCanvas(App):
         if not self.canvas.root_id:
             return  # nothing to save
 
+        is_new_path = False
         if not self.canvas_path:
+            is_new_path = True
             # create default path based on first few words of root
             save_dir = Path.home() / ".runeforge-canvas"
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -369,6 +373,9 @@ class RuneforgeCanvas(App):
 
         try:
             self.canvas.save(self.canvas_path)
+            if is_new_path:
+                self.notify(f"saving to {self.canvas_path}")
+                self.sub_title = str(self.canvas_path)
         except Exception as e:
             self.notify(f"auto-save failed: {e}", severity="error")
 
@@ -407,6 +414,7 @@ class RuneforgeCanvas(App):
         try:
             self.canvas = Canvas.load(most_recent)
             self.canvas_path = most_recent
+            self.sub_title = str(most_recent)
             self._hide_start_prompt()
             self._refresh_all()
             self.notify(f"loaded {most_recent.name}")
