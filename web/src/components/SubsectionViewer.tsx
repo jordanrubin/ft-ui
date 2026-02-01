@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { CanvasNode, SkillInfo, ParsedResponse, Subsection } from '../types';
-import { parseSkillResponse, getSuggestedSkills } from '../utils/responseParser';
+import type { CanvasNode, SkillInfo, ParsedResponse } from '../types';
+import { parseSkillResponse } from '../utils/responseParser';
 import SubsectionCard from './SubsectionCard';
 
 interface SubsectionViewerProps {
@@ -24,8 +24,8 @@ export default function SubsectionViewer({
     return parseSkillResponse(node.content_full, node.operation);
   }, [node.content_full, node.operation]);
 
-  const hasStructure = parsedResponse.subsections.length > 0 ||
-    parsedResponse.mainContent != null;
+  // Check if we have meaningful structure to display
+  const hasContent = parsedResponse.mainContent != null || parsedResponse.subsections.length > 0;
 
   const handleSelect = (id: string) => {
     setSelectedId(selectedId === id ? null : id);
@@ -35,38 +35,12 @@ export default function SubsectionViewer({
     onSkillRunOnSelection(skillName, content);
   };
 
-  // Find selected subsection for skill suggestions
-  const selectedSubsection = useMemo((): Subsection | null => {
-    if (!selectedId) return null;
-
-    const findById = (subs: Subsection[]): Subsection | null => {
-      for (const sub of subs) {
-        if (sub.id === selectedId) return sub;
-        if (sub.children) {
-          const found = findById(sub.children);
-          if (found) return found;
-        }
-      }
-      return null;
-    };
-
-    if (parsedResponse.mainContent?.id === selectedId) {
-      return parsedResponse.mainContent;
-    }
-
-    return findById(parsedResponse.subsections);
-  }, [selectedId, parsedResponse]);
-
-  const suggestedSkills = selectedSubsection
-    ? getSuggestedSkills(selectedSubsection.type)
-    : [];
-
   // Get section label based on content type
   const getSectionLabel = () => {
     const firstType = parsedResponse.subsections[0]?.type;
     switch (firstType) {
       case 'antithesis':
-        return 'ANTITHESES — CLICK TO EXPAND';
+        return 'ANTITHESES — CLICK TO SELECT';
       case 'crux':
         return 'CRUXES — CLICK TO SELECT';
       case 'assumption':
@@ -78,23 +52,12 @@ export default function SubsectionViewer({
       case 'dimension':
         return 'DIMENSIONS — CLICK TO SELECT';
       default:
-        return 'SECTIONS — CLICK TO SELECT';
+        return null; // Don't show a label for generic content
     }
   };
 
-  // Extract a short version of the input for the header
-  const getInputPreview = () => {
-    // Try to get from parent context or node content
-    const lines = node.content_full.split('\n');
-    const firstMeaningfulLine = lines.find(l => l.trim() && !l.startsWith('#'));
-    if (firstMeaningfulLine && firstMeaningfulLine.length < 100) {
-      return firstMeaningfulLine.trim();
-    }
-    return node.content_compressed || 'Response';
-  };
-
-  if (!hasStructure) {
-    // No structured content - show as a simple formatted view
+  // If no meaningful structure, show clean formatted content
+  if (!hasContent) {
     return (
       <div style={{
         background: '#f8fafc',
@@ -110,30 +73,22 @@ export default function SubsectionViewer({
         }}>
           <div style={{
             color: '#a1a1aa',
-            fontSize: '12px',
-            marginBottom: '6px',
+            fontSize: '13px',
+            fontWeight: 500,
           }}>
             {node.operation || 'response'}
           </div>
-          <div style={{
-            color: '#ffffff',
-            fontSize: '16px',
-            fontWeight: 500,
-            lineHeight: 1.4,
-          }}>
-            "{getInputPreview()}"
-          </div>
         </div>
 
-        {/* Content */}
+        {/* Content - nicely formatted */}
         <div style={{
           background: '#ffffff',
           borderRadius: '12px',
-          padding: '16px',
+          padding: '20px',
           border: '1px solid #e5e7eb',
           color: '#374151',
           fontSize: '14px',
-          lineHeight: 1.7,
+          lineHeight: 1.8,
           whiteSpace: 'pre-wrap',
         }}>
           {node.content_full}
@@ -141,6 +96,8 @@ export default function SubsectionViewer({
       </div>
     );
   }
+
+  const sectionLabel = getSectionLabel();
 
   return (
     <div style={{
@@ -157,27 +114,10 @@ export default function SubsectionViewer({
       }}>
         <div style={{
           color: '#a1a1aa',
-          fontSize: '12px',
-          marginBottom: '6px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
-          {node.operation || '@skill'}
-          {parsedResponse.header?.compressed && (
-            <>
-              <span style={{ color: '#52525b' }}>→</span>
-              <span>compressed</span>
-            </>
-          )}
-        </div>
-        <div style={{
-          color: '#ffffff',
-          fontSize: '16px',
+          fontSize: '13px',
           fontWeight: 500,
-          lineHeight: 1.4,
         }}>
-          "{getInputPreview()}"
+          {node.operation || 'response'}
         </div>
       </div>
 
@@ -203,7 +143,6 @@ export default function SubsectionViewer({
             fontWeight: 600,
             marginBottom: '10px',
             letterSpacing: '0.5px',
-            textTransform: 'uppercase',
           }}>
             {parsedResponse.mainContent.title}
           </div>
@@ -216,7 +155,7 @@ export default function SubsectionViewer({
           </div>
 
           {/* Skill buttons when selected */}
-          {selectedId === parsedResponse.mainContent.id && (
+          {selectedId === parsedResponse.mainContent.id && skills.length > 0 && (
             <div style={{
               marginTop: '16px',
               paddingTop: '16px',
@@ -224,19 +163,19 @@ export default function SubsectionViewer({
             }}>
               <div style={{
                 fontSize: '12px',
-                color: '#ef4444',
+                color: '#a1a1aa',
                 marginBottom: '10px',
                 fontWeight: 500,
               }}>
-                Run skill on selection:
+                Run skill on this:
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {suggestedSkills.map((skillName) => (
+                {skills.map((skill) => (
                   <button
-                    key={skillName}
+                    key={skill.name}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSkillRun(skillName, parsedResponse.mainContent!.content);
+                      handleSkillRun(skill.name, parsedResponse.mainContent!.content);
                     }}
                     disabled={isRunning}
                     style={{
@@ -249,12 +188,9 @@ export default function SubsectionViewer({
                       fontWeight: 500,
                       cursor: isRunning ? 'not-allowed' : 'pointer',
                       opacity: isRunning ? 0.6 : 1,
-                      transition: 'background 0.15s ease',
                     }}
-                    onMouseOver={(e) => !isRunning && (e.currentTarget.style.background = '#52525b')}
-                    onMouseOut={(e) => (e.currentTarget.style.background = '#3f3f46')}
                   >
-                    {skillName}
+                    {skill.display_name}
                   </button>
                 ))}
               </div>
@@ -263,7 +199,7 @@ export default function SubsectionViewer({
         </div>
       )}
 
-      {/* How to use hint */}
+      {/* Instruction hint - only show if we have subsections and nothing selected */}
       {!selectedId && parsedResponse.subsections.length > 0 && (
         <div style={{
           background: '#fef9c3',
@@ -276,12 +212,12 @@ export default function SubsectionViewer({
           lineHeight: 1.5,
         }}>
           <strong style={{ color: '#a16207' }}>How to use:</strong>{' '}
-          Click a {parsedResponse.subsections[0]?.type || 'section'} to select it, then click an operation button to copy the prompt. Paste in chat to run.
+          Click an item to select it, then click an operation button to run that skill on the selected content.
         </div>
       )}
 
-      {/* Subsections header */}
-      {parsedResponse.subsections.length > 0 && (
+      {/* Subsections label */}
+      {sectionLabel && parsedResponse.subsections.length > 0 && (
         <div style={{
           color: '#6b7280',
           fontSize: '12px',
@@ -289,7 +225,7 @@ export default function SubsectionViewer({
           marginBottom: '12px',
           letterSpacing: '0.5px',
         }}>
-          {getSectionLabel()}
+          {sectionLabel}
         </div>
       )}
 
@@ -302,7 +238,6 @@ export default function SubsectionViewer({
             isSelected={selectedId === subsection.id}
             onSelect={handleSelect}
             onSkillRun={handleSkillRun}
-            suggestedSkills={getSuggestedSkills(subsection.type)}
             skills={skills}
           />
         ))}

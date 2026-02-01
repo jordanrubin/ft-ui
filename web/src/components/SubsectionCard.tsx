@@ -6,7 +6,6 @@ interface SubsectionCardProps {
   isSelected: boolean;
   onSelect: (id: string) => void;
   onSkillRun?: (skillName: string, content: string) => void;
-  suggestedSkills?: string[];
   skills?: SkillInfo[];
 }
 
@@ -25,7 +24,6 @@ export default function SubsectionCard({
   isSelected,
   onSelect,
   onSkillRun,
-  suggestedSkills = [],
   skills = [],
 }: SubsectionCardProps) {
   const [showAssumptions, setShowAssumptions] = useState(false);
@@ -222,7 +220,7 @@ export default function SubsectionCard({
       </div>
 
       {/* Skill action buttons (shown when selected) */}
-      {isSelected && suggestedSkills.length > 0 && (
+      {isSelected && skills.length > 0 && (
         <div style={{
           padding: '12px 16px',
           borderTop: '1px solid #f3f4f6',
@@ -231,17 +229,17 @@ export default function SubsectionCard({
         }}>
           <div style={{
             fontSize: '12px',
-            color: '#ef4444',
+            color: '#71717a',
             marginBottom: '10px',
             fontWeight: 500,
           }}>
-            Copy prompt & paste in chat:
+            Run skill on this:
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {suggestedSkills.map((skillName) => (
+            {skills.map((skill) => (
               <button
-                key={skillName}
-                onClick={(e) => handleSkillClick(skillName, e)}
+                key={skill.name}
+                onClick={(e) => handleSkillClick(skill.name, e)}
                 style={{
                   padding: '8px 14px',
                   background: '#18181b',
@@ -256,7 +254,7 @@ export default function SubsectionCard({
                 onMouseOver={(e) => (e.currentTarget.style.background = '#27272a')}
                 onMouseOut={(e) => (e.currentTarget.style.background = '#18181b')}
               >
-                {skillName}
+                {skill.display_name}
               </button>
             ))}
           </div>

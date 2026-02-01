@@ -1,4 +1,5 @@
 // Parser for extracting structured subsections from skill responses
+// This parser understands the semantic structure of each skill's output format
 
 import type {
   Subsection,
@@ -14,339 +15,340 @@ function generateId(): string {
   return `sub_${++idCounter}_${Date.now().toString(36)}`;
 }
 
-// Patterns for extracting metadata from text
-const IMPORTANCE_PATTERNS: Record<ImportanceLevel, RegExp[]> = {
-  high: [/\bhigh\b/i, /\bcritical\b/i, /\bkey\b/i, /\bcrucial\b/i, /\bcentral\b/i],
-  medium: [/\bmed(?:ium)?\b/i, /\bmoderate\b/i, /\bsecondary\b/i],
-  low: [/\blow\b/i, /\bminor\b/i, /\bperipheral\b/i],
+// Antithesis type detection
+const ANTITHESIS_TYPE_PATTERNS: Record<string, { pattern: RegExp; tag: SubsectionTag }> = {
+  'rival thesis': {
+    pattern: /rival\s*thesis|competing\s*(theory|view|position)|alternative\s*explanation/i,
+    tag: { label: 'rival thesis', color: 'red' }
+  },
+  'selection critique': {
+    pattern: /selection\s*(critique|bias)|sampling\s*(issue|problem|bias)|cherry.?pick/i,
+    tag: { label: 'selection critique', color: 'orange' }
+  },
+  'boundary case': {
+    pattern: /boundary\s*case|edge\s*case|limit\s*case|exception|doesn't\s*apply/i,
+    tag: { label: 'boundary case', color: 'yellow' }
+  },
+  'causal inversion': {
+    pattern: /causal\s*inversion|reverse\s*causation|cause.*effect.*reversed|effect.*cause/i,
+    tag: { label: 'causal inversion', color: 'blue' }
+  },
+  'scale dependence': {
+    pattern: /scale\s*depend|scaling|different\s*scale|doesn't\s*scale/i,
+    tag: { label: 'scale dependence', color: 'purple' }
+  },
+  'mechanism doubt': {
+    pattern: /mechanism|how.*actually.*work|underlying|black\s*box/i,
+    tag: { label: 'mechanism doubt', color: 'gray' }
+  },
 };
 
-const STRENGTH_PATTERNS: Record<StrengthLevel, RegExp[]> = {
-  strong: [/\bstrong\b/i, /\bcompelling\b/i, /\bpowerful\b/i, /\bdecisive\b/i],
-  moderate: [/\bmoderate\b/i, /\bpartial\b/i, /\bqualified\b/i],
-  weak: [/\bweak\b/i, /\btentative\b/i, /\bspeculative\b/i],
-};
-
-const ANTITHESIS_TYPE_PATTERNS: Record<string, RegExp> = {
-  'rival thesis': /rival\s*thesis|competing\s*(theory|view|position)/i,
-  'selection critique': /selection\s*(critique|bias)|sampling\s*(issue|problem|bias)/i,
-  'boundary case': /boundary\s*case|edge\s*case|limit\s*case/i,
-  'causal inversion': /causal\s*inversion|reverse\s*causation|cause.*effect/i,
-  'scale dependence': /scale\s*depend|scaling\s*(issue|problem)|different\s*scale/i,
-  'mechanism doubt': /mechanism\s*doubt|how.*actually.*work|underlying\s*mechanism/i,
-};
-
-function extractImportance(text: string): ImportanceLevel | undefined {
-  const lowerText = text.toLowerCase();
-
-  // Check explicit markers first
-  if (/\[high\]|\(high\)|high\s*importance|high\s*priority/i.test(text)) return 'high';
-  if (/\[med(?:ium)?\]|\(med(?:ium)?\)|medium\s*importance/i.test(text)) return 'medium';
-  if (/\[low\]|\(low\)|low\s*importance/i.test(text)) return 'low';
-
-  for (const [level, patterns] of Object.entries(IMPORTANCE_PATTERNS)) {
-    for (const pattern of patterns) {
-      if (pattern.test(text)) {
-        return level as ImportanceLevel;
-      }
-    }
-  }
-  return undefined;
-}
-
-function extractStrength(text: string): StrengthLevel | undefined {
-  // Check explicit markers first
-  if (/\[strong\]|\(strong\)|strong\s*argument/i.test(text)) return 'strong';
-  if (/\[moderate\]|\(moderate\)/i.test(text)) return 'moderate';
-  if (/\[weak\]|\(weak\)|weak\s*argument/i.test(text)) return 'weak';
-
-  for (const [level, patterns] of Object.entries(STRENGTH_PATTERNS)) {
-    for (const pattern of patterns) {
-      if (pattern.test(text)) {
-        return level as StrengthLevel;
-      }
-    }
-  }
-  return undefined;
-}
-
-function extractAntithesisTags(text: string): SubsectionTag[] {
-  const tags: SubsectionTag[] = [];
-  for (const [type, pattern] of Object.entries(ANTITHESIS_TYPE_PATTERNS)) {
+function detectAntithesisType(text: string): SubsectionTag | undefined {
+  for (const [, { pattern, tag }] of Object.entries(ANTITHESIS_TYPE_PATTERNS)) {
     if (pattern.test(text)) {
-      const tagInfo = {
-        'rival thesis': { label: 'rival thesis', color: 'red' as const },
-        'selection critique': { label: 'selection critique', color: 'orange' as const },
-        'boundary case': { label: 'boundary case', color: 'yellow' as const },
-        'causal inversion': { label: 'causal inversion', color: 'blue' as const },
-        'scale dependence': { label: 'scale dependence', color: 'purple' as const },
-        'mechanism doubt': { label: 'mechanism doubt', color: 'gray' as const },
-      }[type];
-      if (tagInfo) {
-        tags.push(tagInfo);
-      }
+      return tag;
     }
   }
-  return tags;
+  return undefined;
 }
 
+function detectStrength(text: string): StrengthLevel | undefined {
+  if (/\bstrong\b|\bcompelling\b|\bpowerful\b|\bdecisive\b/i.test(text)) return 'strong';
+  if (/\bmoderate\b|\bpartial\b|\bqualified\b/i.test(text)) return 'moderate';
+  if (/\bweak\b|\btentative\b|\bspeculative\b/i.test(text)) return 'weak';
+  return undefined;
+}
+
+function detectImportance(text: string): ImportanceLevel | undefined {
+  if (/\bhigh\b|\bcritical\b|\bkey\b|\bcrucial\b|\bcentral\b|\bprimary\b/i.test(text)) return 'high';
+  if (/\bmed(?:ium)?\b|\bmoderate\b|\bsecondary\b/i.test(text)) return 'medium';
+  if (/\blow\b|\bminor\b|\bperipheral\b/i.test(text)) return 'low';
+  return undefined;
+}
+
+// Extract bullet points as assumptions
 function extractAssumptions(content: string): string[] {
   const assumptions: string[] = [];
+  const lines = content.split('\n');
 
-  // Look for bullet points or numbered items
-  const bulletPattern = /^[\s]*[-*•]\s+(.+)$/gm;
-  const matches = content.matchAll(bulletPattern);
-
-  for (const match of matches) {
-    const item = match[1].trim();
-    // Filter to items that look like assumptions
-    if (item.length > 10 && item.length < 250) {
-      assumptions.push(item);
+  for (const line of lines) {
+    const match = line.match(/^\s*[-*•]\s+(.+)$/);
+    if (match && match[1].length > 10 && match[1].length < 200) {
+      assumptions.push(match[1].trim());
     }
   }
 
-  return assumptions.slice(0, 6);
+  return assumptions.slice(0, 5);
 }
 
-// Parse individual items from a section (numbered list, bullets, or bold headers)
-function parseListItems(content: string, type: SubsectionType): Subsection[] {
-  const items: Subsection[] = [];
+// ============================================================================
+// SKILL-SPECIFIC PARSERS
+// ============================================================================
 
-  // Try to find numbered items: "1. Title" or "1) Title"
-  const numberedPattern = /(?:^|\n)(\d+)[.\)]\s*\*?\*?([^*\n:]+)\*?\*?[:\s]*\n?([\s\S]*?)(?=(?:\n\d+[.\)])|$)/g;
+/**
+ * Parse @antithesize output
+ * Expected format:
+ * - Thesis/Steel-manned position
+ * - Numbered antitheses with descriptions
+ */
+function parseAntithesizeOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
+  let mainContent: Subsection | undefined;
+
+  // Find the thesis section
+  const thesisMatch = content.match(/(?:##?\s*)?(?:THESIS|STEEL[- ]?MANNED|POSITION)[:\s]*\n?([\s\S]*?)(?=##?\s*(?:ANTITHES|COUNTER|\d+\.|$))/i);
+
+  if (thesisMatch) {
+    const thesisContent = thesisMatch[1].trim();
+    if (thesisContent.length > 10) {
+      mainContent = {
+        id: generateId(),
+        type: 'thesis',
+        title: 'THESIS (STEEL-MANNED)',
+        content: thesisContent,
+        collapsed: false,
+      };
+    }
+  }
+
+  // Find antitheses - look for numbered items after any "ANTITHESIS" header or at the end
+  const antithesisSection = content.match(/(?:##?\s*)?(?:ANTITHES[EI]S|COUNTER[- ]?ARGUMENTS?)[:\s]*\n?([\s\S]*?)$/i);
+  const textToParse = antithesisSection ? antithesisSection[1] : content;
+
+  // Parse numbered items: "1. **Title**: Description" or "1. Title\nDescription"
+  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
 
   let match;
-  while ((match = numberedPattern.exec(content)) !== null) {
+  while ((match = numberedPattern.exec(textToParse)) !== null) {
     const title = match[2].trim();
-    const itemContent = match[3]?.trim() || '';
+    const description = match[3].trim();
+    const fullText = title + ' ' + description;
 
-    if (title.length > 5) {
-      const tags = type === 'antithesis' ? extractAntithesisTags(title + ' ' + itemContent) : [];
-      const strength = extractStrength(title + ' ' + itemContent);
-      const importance = extractImportance(title + ' ' + itemContent);
-      const assumptions = ['crux', 'assumption'].includes(type) ? extractAssumptions(itemContent) : [];
+    // Skip if this looks like a step instruction, not an actual antithesis
+    if (/step\s*\d|generate|identify|process/i.test(title)) continue;
 
-      items.push({
+    const tag = detectAntithesisType(fullText);
+    const strength = detectStrength(fullText);
+
+    subsections.push({
+      id: generateId(),
+      type: 'antithesis',
+      title,
+      content: description,
+      strength: strength || 'moderate',
+      tags: tag ? [tag] : undefined,
+      collapsed: false,
+    });
+  }
+
+  // If no numbered items found, try bold headers
+  if (subsections.length === 0) {
+    const boldPattern = /\*\*([^*]+)\*\*[:\s]*([\s\S]*?)(?=\*\*|$)/g;
+    while ((match = boldPattern.exec(textToParse)) !== null) {
+      const title = match[1].trim();
+      const description = match[2].trim();
+
+      // Skip short/generic titles
+      if (title.length < 5 || /step|note|example/i.test(title)) continue;
+
+      const fullText = title + ' ' + description;
+      const tag = detectAntithesisType(fullText);
+      const strength = detectStrength(fullText);
+
+      subsections.push({
         id: generateId(),
-        type,
+        type: 'antithesis',
         title,
-        content: itemContent,
-        strength,
-        importance,
-        tags: tags.length > 0 ? tags : undefined,
-        assumptions: assumptions.length > 0 ? assumptions : undefined,
+        content: description,
+        strength: strength || 'moderate',
+        tags: tag ? [tag] : undefined,
         collapsed: false,
       });
     }
   }
 
-  // If no numbered items, try bold headers: "**Title**: content" or "**Title**\ncontent"
-  if (items.length === 0) {
-    const boldPattern = /\*\*([^*]+)\*\*[:\s]*([^*]*?)(?=\*\*|$)/g;
-
-    while ((match = boldPattern.exec(content)) !== null) {
-      const title = match[1].trim();
-      const itemContent = match[2]?.trim() || '';
-
-      if (title.length > 3 && title.length < 150) {
-        const tags = type === 'antithesis' ? extractAntithesisTags(title + ' ' + itemContent) : [];
-        const strength = extractStrength(title + ' ' + itemContent);
-        const importance = extractImportance(title + ' ' + itemContent);
-
-        items.push({
-          id: generateId(),
-          type,
-          title,
-          content: itemContent,
-          strength,
-          importance,
-          tags: tags.length > 0 ? tags : undefined,
-          collapsed: false,
-        });
-      }
-    }
-  }
-
-  // If still no items, try bullet points with meaningful content
-  if (items.length === 0) {
-    const bulletPattern = /(?:^|\n)[-*•]\s+(.+?)(?=\n[-*•]|\n\n|$)/gs;
-
-    while ((match = bulletPattern.exec(content)) !== null) {
-      const text = match[1].trim();
-
-      if (text.length > 20) {
-        // Try to extract title from first sentence or colon-separated
-        let title = text;
-        let itemContent = '';
-
-        const colonIdx = text.indexOf(':');
-        if (colonIdx > 0 && colonIdx < 80) {
-          title = text.slice(0, colonIdx).trim();
-          itemContent = text.slice(colonIdx + 1).trim();
-        } else if (text.length > 80) {
-          const sentenceEnd = text.search(/[.!?]\s/);
-          if (sentenceEnd > 0 && sentenceEnd < 100) {
-            title = text.slice(0, sentenceEnd + 1).trim();
-            itemContent = text.slice(sentenceEnd + 1).trim();
-          } else {
-            title = text.slice(0, 80) + '...';
-            itemContent = text;
-          }
-        }
-
-        const tags = type === 'antithesis' ? extractAntithesisTags(text) : [];
-        const strength = extractStrength(text);
-        const importance = extractImportance(text);
-
-        items.push({
-          id: generateId(),
-          type,
-          title,
-          content: itemContent,
-          strength,
-          importance,
-          tags: tags.length > 0 ? tags : undefined,
-          collapsed: false,
-        });
-      }
-    }
-  }
-
-  return items;
+  return {
+    mainContent,
+    subsections,
+    rawContent: content,
+  };
 }
 
-function classifySectionType(title: string): SubsectionType {
-  const upperTitle = title.toUpperCase();
+/**
+ * Parse @excavate output
+ * Expected format: Numbered cruxes with descriptions and assumptions
+ */
+function parseExcavateOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
 
-  if (/THESIS|STEEL[- ]?MANNED|POSITION|CLAIM/i.test(upperTitle)) return 'thesis';
-  if (/ANTITHES|COUNTER|OBJECTION|CHALLENGE/i.test(upperTitle)) return 'antithesis';
-  if (/CRUX|PIVOT|HINGE|KEY\s*QUESTION/i.test(upperTitle)) return 'crux';
-  if (/ASSUMPTION|PRESUPPOS|TAKEN\s*FOR\s*GRANTED/i.test(upperTitle)) return 'assumption';
-  if (/FAILURE|STRESS|BREAK|EDGE\s*CASE/i.test(upperTitle)) return 'failure_mode';
-  if (/DIMENSION|AXIS|FACTOR|VARIABLE/i.test(upperTitle)) return 'dimension';
-  if (/ALTERNATIVE|OPTION|POSSIBILITY|PATH/i.test(upperTitle)) return 'alternative';
-  if (/STEP\s*\d|SCENARIO|SEQUENCE|TRACE/i.test(upperTitle)) return 'simulation_step';
-  if (/NEGSPACE|MISSING|ABSENT|GAP|VOID/i.test(upperTitle)) return 'negspace';
-  if (/METAPHOR|ANALOG|MAPPING|LIKE/i.test(upperTitle)) return 'metaphor';
-  if (/RHYME|PARALLEL|ECHO|SIMILAR/i.test(upperTitle)) return 'rhyme';
-  if (/SYNTHESIS|INTEGRATION|RECONCIL|BRIDGE/i.test(upperTitle)) return 'synthesis';
+  // Look for cruxes - numbered items
+  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
 
-  return 'generic';
+  let match;
+  while ((match = numberedPattern.exec(content)) !== null) {
+    const title = match[2].trim();
+    const description = match[3].trim();
+
+    // Skip process steps
+    if (/step|identify|surface|examine/i.test(title)) continue;
+
+    const importance = detectImportance(title + ' ' + description) || 'medium';
+    const assumptions = extractAssumptions(description);
+
+    subsections.push({
+      id: generateId(),
+      type: 'crux',
+      title,
+      content: description.split('\n')[0]?.trim() || '', // Just first line as description
+      importance,
+      assumptions: assumptions.length > 0 ? assumptions : undefined,
+      collapsed: false,
+    });
+  }
+
+  return {
+    subsections,
+    rawContent: content,
+  };
 }
+
+/**
+ * Parse @stressify output
+ * Expected format: Failure modes with severity
+ */
+function parseStressifyOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
+
+  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
+
+  let match;
+  while ((match = numberedPattern.exec(content)) !== null) {
+    const title = match[2].trim();
+    const description = match[3].trim();
+
+    if (/step|identify|probe/i.test(title)) continue;
+
+    const strength = detectStrength(title + ' ' + description);
+
+    subsections.push({
+      id: generateId(),
+      type: 'failure_mode',
+      title,
+      content: description,
+      strength: strength || 'moderate',
+      collapsed: false,
+    });
+  }
+
+  return {
+    subsections,
+    rawContent: content,
+  };
+}
+
+/**
+ * Parse @diverge output
+ * Expected format: Alternative options
+ */
+function parseDivergeOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
+
+  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
+
+  let match;
+  while ((match = numberedPattern.exec(content)) !== null) {
+    const title = match[2].trim();
+    const description = match[3].trim();
+
+    if (/step|generate|brainstorm/i.test(title)) continue;
+
+    subsections.push({
+      id: generateId(),
+      type: 'alternative',
+      title,
+      content: description,
+      collapsed: false,
+    });
+  }
+
+  return {
+    subsections,
+    rawContent: content,
+  };
+}
+
+/**
+ * Generic parser for unknown skill types
+ * Only creates cards for clearly structured numbered items
+ */
+function parseGenericOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
+
+  // Only parse clear numbered items with substantial content
+  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n:]+?)\*?\*?\s*[:\n]\s*([\s\S]*?)(?=\n\d+\.|$)/g;
+
+  let match;
+  while ((match = numberedPattern.exec(content)) !== null) {
+    const title = match[2].trim();
+    const description = match[3].trim();
+
+    // Skip if title looks like a process step or is too short
+    if (title.length < 10) continue;
+    if (/^step\s*\d/i.test(title)) continue;
+    if (/identify|examine|consider|note|generate/i.test(title) && title.length < 30) continue;
+
+    subsections.push({
+      id: generateId(),
+      type: 'generic',
+      title,
+      content: description.slice(0, 300), // Limit description length
+      collapsed: false,
+    });
+  }
+
+  // If no good numbered items, don't create fake structure
+  // Just return empty subsections - the viewer will show raw content
+  return {
+    subsections,
+    rawContent: content,
+  };
+}
+
+// ============================================================================
+// MAIN PARSER
+// ============================================================================
 
 export function parseSkillResponse(
   content: string,
   operation?: string | null
 ): ParsedResponse {
-  // Split content by markdown headers
-  const headerPattern = /^(#{1,3})\s+(.+)$/gm;
-  const sections: { level: number; title: string; start: number; end?: number }[] = [];
+  // Normalize operation name
+  const skill = operation?.toLowerCase().replace('@', '') || '';
 
-  let match;
-  while ((match = headerPattern.exec(content)) !== null) {
-    sections.push({
-      level: match[1].length,
-      title: match[2].trim(),
-      start: match.index,
-    });
+  // Route to skill-specific parser
+  switch (skill) {
+    case 'antithesize':
+      return parseAntithesizeOutput(content);
+    case 'excavate':
+      return parseExcavateOutput(content);
+    case 'stressify':
+      return parseStressifyOutput(content);
+    case 'diverge':
+      return parseDivergeOutput(content);
+    default:
+      return parseGenericOutput(content);
   }
-
-  // Set end positions
-  for (let i = 0; i < sections.length; i++) {
-    sections[i].end = sections[i + 1]?.start || content.length;
-  }
-
-  // If no headers found, try to parse as a flat list
-  if (sections.length === 0) {
-    const flatItems = parseListItems(content, 'generic');
-    if (flatItems.length > 0) {
-      return {
-        subsections: flatItems,
-        rawContent: content,
-      };
-    }
-
-    // No structure at all - return as single section
-    return {
-      subsections: [{
-        id: generateId(),
-        type: 'generic',
-        title: 'Response',
-        content: content.trim(),
-        collapsed: false,
-      }],
-      rawContent: content,
-    };
-  }
-
-  // Parse sections
-  const parsedSections: Subsection[] = [];
-  let mainContent: Subsection | undefined;
-
-  for (const section of sections) {
-    const sectionText = content.slice(section.start, section.end);
-    const sectionContent = sectionText.replace(/^#{1,3}\s+.+\n?/, '').trim();
-    const type = classifySectionType(section.title);
-
-    // Try to parse items within the section
-    const items = parseListItems(sectionContent, type);
-
-    const parsed: Subsection = {
-      id: generateId(),
-      type,
-      title: section.title,
-      content: items.length > 0 ? '' : sectionContent,
-      children: items.length > 0 ? items : undefined,
-      collapsed: false,
-    };
-
-    // Thesis/main content goes to mainContent
-    if (type === 'thesis' && !mainContent) {
-      mainContent = parsed;
-    } else {
-      // If section has children, make the parent a container
-      if (items.length > 0) {
-        parsedSections.push(...items);
-      } else if (sectionContent.length > 0) {
-        // Add section with its content
-        const sectionItems = parseListItems(sectionContent, type);
-        if (sectionItems.length > 0) {
-          parsedSections.push(...sectionItems);
-        } else {
-          parsedSections.push(parsed);
-        }
-      }
-    }
-  }
-
-  // Build header info
-  const header = operation ? {
-    skill: operation,
-    input: '',
-    compressed: undefined,
-  } : undefined;
-
-  return {
-    header,
-    mainContent,
-    subsections: parsedSections,
-    rawContent: content,
-  };
 }
 
-// Check if content appears to be structured skill output
+// Check if content has meaningful structure worth displaying
 export function isStructuredResponse(content: string): boolean {
-  // Check for markdown headers
-  const hasHeaders = /^#{1,3}\s+/m.test(content);
+  // Must have actual numbered items with descriptions
+  const hasNumberedItems = /\n\d+\.\s*[^\n]{10,}/.test(content);
 
-  // Check for skill-related keywords
-  const hasSkillMarkers = /THESIS|ANTITHES|CRUX|DIMENSION|ALTERNATIVE|FAILURE|SCENARIO|NEGSPACE|METAPHOR|RHYME|SYNTHESIS|ASSUMPTION/i.test(content);
+  // Or must have skill-specific markers
+  const hasSkillMarkers = /THESIS|ANTITHES|CRUX|FAILURE\s*MODE/i.test(content);
 
-  // Check for structured lists
-  const hasNumberedList = /^\d+[.\)]\s+/m.test(content);
-  const hasBoldHeaders = /\*\*[^*]+\*\*/m.test(content);
-
-  return hasHeaders || (hasSkillMarkers && (hasNumberedList || hasBoldHeaders));
+  return hasNumberedItems || hasSkillMarkers;
 }
 
 // Get suggested skills for a subsection based on its type
@@ -354,10 +356,10 @@ export function getSuggestedSkills(type: SubsectionType): string[] {
   const suggestions: Record<SubsectionType, string[]> = {
     thesis: ['@antithesize', '@stressify', '@excavate'],
     antithesis: ['@stressify', '@simulate', '@synthesize'],
-    crux: ['@stressify', '@operationalize', '@antithesize'],
+    crux: ['@stressify', '@antithesize', '@simulate'],
     assumption: ['@antithesize', '@stressify', '@excavate'],
     dimension: ['@diverge', '@simulate', '@stressify'],
-    alternative: ['@simulate', '@stressify', '@dimensionalize'],
+    alternative: ['@simulate', '@stressify', '@antithesize'],
     failure_mode: ['@simulate', '@diverge', '@excavate'],
     simulation_step: ['@stressify', '@diverge', '@excavate'],
     negspace: ['@excavate', '@diverge', '@simulate'],
