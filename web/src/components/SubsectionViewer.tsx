@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { CanvasNode, SkillInfo, ParsedResponse, Subsection } from '../types';
-import { parseSkillResponse, getSuggestedSkills } from '../utils/responseParser';
+import type { CanvasNode, SkillInfo, ParsedResponse } from '../types';
+import { parseSkillResponse } from '../utils/responseParser';
 import SubsectionCard from './SubsectionCard';
 
 interface SubsectionViewerProps {
@@ -34,21 +34,6 @@ export default function SubsectionViewer({
   const handleSkillRun = (skillName: string, content: string) => {
     onSkillRunOnSelection(skillName, content);
   };
-
-  // Find selected subsection for skill suggestions
-  const selectedSubsection = useMemo((): Subsection | null => {
-    if (!selectedId) return null;
-
-    if (parsedResponse.mainContent?.id === selectedId) {
-      return parsedResponse.mainContent;
-    }
-
-    return parsedResponse.subsections.find(s => s.id === selectedId) || null;
-  }, [selectedId, parsedResponse]);
-
-  const suggestedSkills = selectedSubsection
-    ? getSuggestedSkills(selectedSubsection.type)
-    : [];
 
   // Get section label based on content type
   const getSectionLabel = () => {
@@ -170,7 +155,7 @@ export default function SubsectionViewer({
           </div>
 
           {/* Skill buttons when selected */}
-          {selectedId === parsedResponse.mainContent.id && (
+          {selectedId === parsedResponse.mainContent.id && skills.length > 0 && (
             <div style={{
               marginTop: '16px',
               paddingTop: '16px',
@@ -178,19 +163,19 @@ export default function SubsectionViewer({
             }}>
               <div style={{
                 fontSize: '12px',
-                color: '#ef4444',
+                color: '#a1a1aa',
                 marginBottom: '10px',
                 fontWeight: 500,
               }}>
-                Run skill on this section:
+                Run skill on this:
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {suggestedSkills.map((skillName) => (
+                {skills.map((skill) => (
                   <button
-                    key={skillName}
+                    key={skill.name}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSkillRun(skillName, parsedResponse.mainContent!.content);
+                      handleSkillRun(skill.name, parsedResponse.mainContent!.content);
                     }}
                     disabled={isRunning}
                     style={{
@@ -205,7 +190,7 @@ export default function SubsectionViewer({
                       opacity: isRunning ? 0.6 : 1,
                     }}
                   >
-                    {skillName}
+                    {skill.display_name}
                   </button>
                 ))}
               </div>
@@ -253,7 +238,6 @@ export default function SubsectionViewer({
             isSelected={selectedId === subsection.id}
             onSelect={handleSelect}
             onSkillRun={handleSkillRun}
-            suggestedSkills={getSuggestedSkills(subsection.type)}
             skills={skills}
           />
         ))}
