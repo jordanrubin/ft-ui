@@ -47,6 +47,7 @@ class NodeWidget(Static):
         self.is_focused = is_focused
         if is_focused:
             self.add_class("focused")
+            self.expanded = True  # auto-expand focused node
 
     def render(self) -> Panel:
         """render the node as a panel."""
@@ -69,7 +70,7 @@ class NodeWidget(Static):
             text = Text()
             text.append(self.node.content_compressed)
             if len(self.node.content_full) > len(self.node.content_compressed):
-                text.append(" [click to expand]", style="dim italic")
+                text.append(" [press 'e' to expand]", style="dim italic")
             content = text
 
         return Panel(
@@ -113,11 +114,12 @@ class ActivePath(ScrollableContainer):
         for node_id in self.canvas.active_path:
             node = self.canvas.nodes.get(node_id)
             if node:
+                # don't use id= to avoid duplicate ID errors on refresh
                 widget = NodeWidget(
                     node,
                     is_focused=(node_id == focus_id),
-                    id=f"node-{node_id}",
                 )
+                widget.node_id = node_id  # store for reference
                 if node_id in self._expanded:
                     widget.expanded = True
                 yield widget

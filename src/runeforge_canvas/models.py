@@ -167,6 +167,56 @@ class Canvas:
             if cid != node_id and cid in self.nodes
         ]
 
+    def delete_node(self, node_id: str) -> Optional[str]:
+        """delete a node and all its descendants.
+
+        returns the parent_id to focus after deletion, or None if root deleted.
+        cannot delete the root node.
+        """
+        node = self.nodes.get(node_id)
+        if not node:
+            return None
+
+        # don't delete root
+        if node.type == NodeType.ROOT:
+            return None
+
+        parent_id = node.parent_id
+
+        # collect all descendants to delete
+        to_delete = self._collect_descendants(node_id)
+        to_delete.add(node_id)
+
+        # remove from parent's children list
+        if parent_id and parent_id in self.nodes:
+            parent = self.nodes[parent_id]
+            parent.children_ids = [
+                cid for cid in parent.children_ids if cid not in to_delete
+            ]
+
+        # delete all nodes
+        for nid in to_delete:
+            del self.nodes[nid]
+
+        # update active path if deleted node was in it
+        if node_id in self.active_path:
+            self.set_focus(parent_id or self.root_id or "")
+
+        return parent_id
+
+    def _collect_descendants(self, node_id: str) -> set[str]:
+        """recursively collect all descendant node ids."""
+        descendants = set()
+        node = self.nodes.get(node_id)
+        if not node:
+            return descendants
+
+        for child_id in node.children_ids:
+            descendants.add(child_id)
+            descendants.update(self._collect_descendants(child_id))
+
+        return descendants
+
     def to_dict(self) -> dict:
         """serialize to dict for json."""
         return {

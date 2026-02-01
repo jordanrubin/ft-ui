@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from textual.widgets import Static
 from textual.message import Message
+from textual.binding import Binding
 from rich.text import Text
 
 from ..models import Canvas, CanvasNode, NodeType
@@ -20,8 +21,15 @@ class NodeClicked(Message):
         super().__init__()
 
 
-class Minimap(Static):
+class Minimap(Static, can_focus=True):
     """ascii tree minimap of the canvas graph."""
+
+    BINDINGS = [
+        Binding("up", "select_prev", "previous", show=False),
+        Binding("down", "select_next", "next", show=False),
+        Binding("k", "select_prev", "previous", show=False),
+        Binding("j", "select_next", "next", show=False),
+    ]
 
     DEFAULT_CSS = """
     Minimap {
@@ -30,6 +38,10 @@ class Minimap(Static):
         max-height: 40%;
         padding: 1;
         border: solid $surface-lighten-2;
+    }
+
+    Minimap:focus {
+        border: solid $primary;
     }
     """
 
@@ -116,14 +128,60 @@ class Minimap(Static):
 
     def on_click(self, event) -> None:
         """handle click to focus a node."""
-        # find which node was clicked based on y position
+        # take focus on any click
+        self.focus()
+
+        # event.y is relative to content area (after padding/border)
         y = event.y
+
+        # find which node was clicked based on y position
         for node_id, (row, _) in self._node_positions.items():
             if row == y:
                 self.post_message(NodeClicked(node_id))
+                event.stop()
                 return
+
+    def on_mouse_down(self, event) -> None:
+        """also handle mouse down for immediate response."""
+        self.focus()
 
     def refresh_canvas(self, canvas: Canvas) -> None:
         """update with new canvas state."""
         self.canvas = canvas
         self.refresh()
+
+    def _get_ordered_node_ids(self) -> list[str]:
+        """get node ids in display order (top to bottom)."""
+        return sorted(
+            self._node_positions.keys(),
+            key=lambda nid: self._node_positions[nid][0]
+        )
+
+    def _get_focus_index(self) -> int:
+        """get index of currently focused node in display order."""
+        if not self.canvas.active_path:
+            return -1
+        focus_id = self.canvas.active_path[-1]
+        ordered = self._get_ordered_node_ids()
+        try:
+            return ordered.index(focus_id)
+        except ValueError:
+            return -1
+
+    def action_select_next(self) -> None:
+        """select next node in tree."""
+        ordered = self._get_ordered_node_ids()
+        if not ordered:
+            return
+        idx = self._get_focus_index()
+        new_idx = (idx + 1) % len(ordered)
+        self.post_message(NodeClicked(ordered[new_idx]))
+
+    def action_select_prev(self) -> None:
+        """select previous node in tree."""
+        ordered = self._get_ordered_node_ids()
+        if not ordered:
+            return
+        idx = self._get_focus_index()
+        new_idx = (idx - 1) % len(ordered)
+        self.post_message(NodeClicked(ordered[new_idx]))

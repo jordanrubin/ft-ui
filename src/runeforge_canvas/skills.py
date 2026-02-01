@@ -32,7 +32,7 @@ class Skill:
             param_lines = [f"- {k}: {v}" for k, v in params.items()]
             param_section = f"\n<parameters>\n" + "\n".join(param_lines) + "\n</parameters>\n"
 
-        return f"""<skill>
+        return f"""<skill name="{self.name}">
 {self.body}
 </skill>
 {param_section}
@@ -40,7 +40,7 @@ class Skill:
 {context}
 </context>
 
-apply the skill above to the context. follow the skill's process exactly."""
+apply the {self.name} skill above to the context. follow the skill's process exactly."""
 
 
 @dataclass

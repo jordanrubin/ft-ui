@@ -20,9 +20,15 @@ def main():
         "-s",
         help="path to skills directory (default: ../runeforge/public)",
     )
+    parser.add_argument(
+        "--mock",
+        "-m",
+        action="store_true",
+        help="use mock client (no api calls, for testing)",
+    )
 
     args = parser.parse_args()
-    run(canvas_path=args.canvas, skills_dir=args.skills_dir)
+    run(canvas_path=args.canvas, skills_dir=args.skills_dir, mock=args.mock)
 
 
 if __name__ == "__main__":

@@ -18,10 +18,18 @@ from textual.binding import Binding
 
 from .models import Canvas, CanvasNode
 from .skills import SkillLoader, Skill, SkillChain, get_default_loader
-from .client import ClaudeClient
+from .client import ClaudeClient, MockClient
 from .widgets.minimap import Minimap, NodeClicked
-from .widgets.path import ActivePath
-from .widgets.operations import OperationsPanel, RunOperation, RunChain, AddNote
+from .widgets.path import ActivePath, NodeWidget
+from .widgets.operations import OperationsPanel, RunOperation, RunChain, AddNote, RunChat
+from .widgets.spinner import Spinner
+
+import logging
+logging.basicConfig(level=logging.DEBUG, filename="/tmp/runeforge-debug.log")
+
+# retry settings for failed operations
+MAX_RETRIES = 2
+RETRY_DELAY = 1.0  # seconds
 
 
 class RuneforgeCanvas(App):
@@ -37,17 +45,6 @@ class RuneforgeCanvas(App):
 
     #main-container {
         height: 1fr;
-    }
-
-    #spinner {
-        display: none;
-        text-align: center;
-        padding: 1;
-        background: $surface;
-    }
-
-    #spinner.visible {
-        display: block;
     }
 
     #start-prompt {
@@ -70,6 +67,9 @@ class RuneforgeCanvas(App):
         Binding("x", "execute", "execute"),
         Binding("r", "review", "review"),
         Binding("n", "new_canvas", "new"),
+        Binding("d", "delete_node", "delete"),
+        Binding("m", "focus_minimap", "minimap"),
+        Binding("o", "toggle_expand", "expand"),
         Binding("escape", "focus_operations", "operations"),
     ]
 
@@ -77,13 +77,15 @@ class RuneforgeCanvas(App):
         self,
         canvas_path: Optional[Path] = None,
         skills_dir: Optional[Path] = None,
+        mock: bool = False,
     ):
         super().__init__()
         self.canvas_path = canvas_path
         self.skill_loader = SkillLoader(skills_dir) if skills_dir else get_default_loader(full=False)
         self.skills: list[Skill] = []
         self.canvas = Canvas(name="untitled")
-        self._client: Optional[ClaudeClient] = None
+        self._mock = mock
+        self._client: Optional[ClaudeClient | MockClient] = None
         self._running_op = False
         self._last_execution: Optional[Path] = None  # path to last execution log
 
@@ -92,8 +94,8 @@ class RuneforgeCanvas(App):
         yield Header()
 
         with Vertical(id="main-container"):
-            # spinner overlay (hidden by default)
-            yield Static("running operation...", id="spinner")
+            # animated spinner (hidden by default)
+            yield Spinner(id="spinner")
 
             # start prompt (shown when no root)
             with Vertical(id="start-prompt"):
@@ -132,7 +134,30 @@ class RuneforgeCanvas(App):
             self._show_start_prompt()
 
         # initialize client
-        self._client = ClaudeClient()
+        logging.debug(f"mock mode: {self._mock}")
+        if self._mock:
+            logging.debug("using MockClient")
+            # mock responses for all 10 public skills
+            self._client = MockClient(
+                responses={
+                    "excavate": "## assumptions surfaced\n\n1. user wants simplicity over features\n2. mobile-first approach assumed\n3. budget constraints exist\n4. timeline is aggressive",
+                    "antithesize": "## opposition\n\n**counter-thesis**: this approach optimizes for the wrong metric.\n\nthe real problem isn't what we think it is.\n\nalternative worldview: speed matters more than correctness here.",
+                    "synthesize": "## synthesis\n\n**core insight**: balance simplicity with robustness.\n\nkey tradeoffs:\n- speed vs quality\n- features vs maintainability\n\n**decision**: start simple, add complexity only when needed.",
+                    "dimensionalize": "## dimensions\n\n| dimension | score | notes |\n|-----------|-------|-------|\n| complexity | 3/5 | moderate |\n| risk | 2/5 | low |\n| impact | 4/5 | high |\n| effort | 3/5 | medium |",
+                    "handlize": "## operational handles\n\n1. **deploy frequency** - can ship daily\n2. **rollback time** - under 5 min\n3. **error budget** - 0.1% acceptable\n4. **key metric** - time to first byte",
+                    "inductify": "## patterns extracted\n\n1. all successful cases share: clear ownership\n2. failures correlate with: unclear requirements\n3. meta-pattern: simplicity wins long-term",
+                    "metaphorization": "## metaphor\n\nthis is like **building a house**:\n- foundation = data model\n- walls = api layer\n- roof = ui\n- plumbing = auth flow",
+                    "negspace": "## what's missing\n\n1. no error handling strategy\n2. no rollback plan\n3. security not addressed\n4. monitoring absent\n5. no user feedback loop",
+                    "rhetoricize": "## rhetoric analysis\n\n**frame**: progress narrative\n**spin**: optimistic\n**hidden assumption**: tech solves all\n**counter-frame**: sustainability",
+                    "rhyme": "## structural echo\n\nthis rhymes with:\n- oauth flow patterns\n- crud app architecture\n- event sourcing (partial)\n- microservices decomposition",
+                },
+                delay=0.5,  # simulate 0.5s API delay
+            )
+            self.notify("mock mode - no api calls", severity="warning")
+        else:
+            logging.debug("using real ClaudeClient")
+            self._client = ClaudeClient()
+        logging.debug(f"client type: {type(self._client).__name__}")
         await self._client.__aenter__()
 
     async def on_unmount(self) -> None:
@@ -179,12 +204,18 @@ class RuneforgeCanvas(App):
 
     def on_node_clicked(self, event: NodeClicked) -> None:
         """handle node click in minimap."""
+        logging.debug(f"node clicked: {event.node_id}")
         self.canvas.set_focus(event.node_id)
         self._refresh_all()
+        self.notify(f"focused: {event.node_id[:8]}", timeout=1)
 
     async def on_run_operation(self, event: RunOperation) -> None:
         """handle operation button click."""
+        logging.debug(f"on_run_operation called: {event.skill_name}")
+        self.notify(f"running {event.skill_name}...", timeout=2)
+
         if self._running_op:
+            logging.debug("already running an operation")
             return
 
         skill = self.skill_loader.get(event.skill_name)
@@ -197,6 +228,7 @@ class RuneforgeCanvas(App):
             self.notify("no node focused", severity="warning")
             return
 
+        logging.debug(f"calling _run_operation with skill={skill.name}")
         await self._run_operation(skill, focus)
 
     async def on_run_chain(self, event: RunChain) -> None:
@@ -219,6 +251,66 @@ class RuneforgeCanvas(App):
 
         await self._run_chain(resolved, focus, chain.display_name)
 
+    async def on_run_chat(self, event: RunChat) -> None:
+        """handle freeform chat prompt about focused node."""
+        if self._running_op:
+            return
+
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        await self._run_chat(event.prompt, focus)
+
+    async def _run_chat(self, user_prompt: str, focus: CanvasNode) -> None:
+        """run a freeform chat turn on the focused node."""
+        self._running_op = True
+        self._show_spinner("thinking...")
+
+        try:
+            # gather context from the path
+            context_nodes = self.canvas.get_context_for_operation(focus.id)
+            context_text = self._format_context(context_nodes)
+
+            # build a simple conversational prompt
+            prompt = f"""here is the current discussion context:
+
+{context_text}
+
+---
+
+user question: {user_prompt}
+
+respond thoughtfully to the user's question about this context. be specific and reference the material above."""
+
+            if not self._client:
+                raise RuntimeError("client not initialized")
+
+            result = await self._client.complete(prompt)
+
+            # create a new node with the response
+            # use operation type with "chat" label to distinguish from notes
+            new_node = CanvasNode.create_operation(
+                operation="chat",
+                content=result,
+                parent_id=focus.id,
+                context_snapshot=[n.id for n in context_nodes],
+            )
+            self.canvas.add_node(new_node)
+            self.canvas.set_focus(new_node.id)
+
+            self._refresh_all()
+            self._auto_save()
+            self.notify("chat complete!", timeout=2)
+
+        except Exception as e:
+            self.notify(f"chat failed: {e}", severity="error")
+
+        finally:
+            self._running_op = False
+            self._hide_spinner()
+
     async def _run_chain(
         self,
         chain: list[tuple[Skill, dict]],
@@ -227,7 +319,7 @@ class RuneforgeCanvas(App):
     ) -> None:
         """run a chain of skills, passing output as input to next."""
         self._running_op = True
-        self._show_spinner()
+        self._show_spinner(f"running {chain_name}")
 
         try:
             # gather initial context
@@ -272,39 +364,59 @@ class RuneforgeCanvas(App):
             self._hide_spinner()
 
     async def _run_operation(self, skill: Skill, focus: CanvasNode) -> None:
-        """run a skill operation on the focused node."""
+        """run a skill operation on the focused node with retry logic."""
+        logging.debug(f"_run_operation started: {skill.name}")
         self._running_op = True
-        self._show_spinner()
+        self._show_spinner(f"running {skill.display_name}")
 
         try:
-            # gather context
-            context_nodes = self.canvas.get_context_for_operation(focus.id)
-            context_text = self._format_context(context_nodes)
+            last_error: Optional[Exception] = None
 
-            # build prompt
-            prompt = skill.build_prompt(context_text)
+            for attempt in range(MAX_RETRIES + 1):
+                try:
+                    # gather context
+                    context_nodes = self.canvas.get_context_for_operation(focus.id)
+                    context_text = self._format_context(context_nodes)
 
-            # call api
-            if not self._client:
-                raise RuntimeError("client not initialized")
+                    # build prompt
+                    prompt = skill.build_prompt(context_text)
 
-            result = await self._client.complete(prompt)
+                    # call api
+                    if not self._client:
+                        raise RuntimeError("client not initialized")
 
-            # create new node
-            new_node = CanvasNode.create_operation(
-                operation=skill.display_name,
-                content=result,
-                parent_id=focus.id,
-                context_snapshot=[n.id for n in context_nodes],
-            )
-            self.canvas.add_node(new_node)
-            self.canvas.set_focus(new_node.id)
+                    if attempt > 0:
+                        self.notify(f"retrying... (attempt {attempt + 1})", severity="warning")
+                        await asyncio.sleep(RETRY_DELAY)
 
-            self._refresh_all()
-            self._auto_save()
+                    result = await self._client.complete(prompt)
+                    logging.debug(f"got result: {result[:100] if result else 'EMPTY'}...")
 
-        except Exception as e:
-            self.notify(f"operation failed: {e}", severity="error")
+                    # create new node
+                    new_node = CanvasNode.create_operation(
+                        operation=skill.display_name,
+                        content=result,
+                        parent_id=focus.id,
+                        context_snapshot=[n.id for n in context_nodes],
+                    )
+                    self.canvas.add_node(new_node)
+                    self.canvas.set_focus(new_node.id)
+                    logging.debug(f"created node {new_node.id}")
+
+                    self._refresh_all()
+                    self._auto_save()
+                    self.notify("operation complete!", timeout=2)
+                    return  # success
+
+                except Exception as e:
+                    last_error = e
+                    # log the error but continue retrying
+                    if attempt < MAX_RETRIES:
+                        self.notify(f"attempt {attempt + 1} failed: {e}", severity="warning")
+                    continue
+
+            # all retries exhausted
+            self.notify(f"operation failed after {MAX_RETRIES + 1} attempts: {last_error}", severity="error")
 
         finally:
             self._running_op = False
@@ -334,13 +446,13 @@ class RuneforgeCanvas(App):
         self._refresh_all()
         self._auto_save()
 
-    def _show_spinner(self) -> None:
-        """show the spinner overlay."""
-        self.query_one("#spinner").add_class("visible")
+    def _show_spinner(self, operation_name: str = "running operation") -> None:
+        """show the animated spinner."""
+        self.query_one("#spinner", Spinner).start(operation_name)
 
     def _hide_spinner(self) -> None:
-        """hide the spinner overlay."""
-        self.query_one("#spinner").remove_class("visible")
+        """hide the spinner."""
+        self.query_one("#spinner", Spinner).stop()
 
     def _refresh_all(self) -> None:
         """refresh all canvas widgets."""
@@ -395,6 +507,29 @@ class RuneforgeCanvas(App):
         self.canvas = Canvas(name="untitled")
         self.canvas_path = None
         self._show_start_prompt()
+
+    def action_delete_node(self) -> None:
+        """delete the focused node and its descendants."""
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        if focus.id == self.canvas.root_id:
+            self.notify("cannot delete root node", severity="warning")
+            return
+
+        # delete and get parent to focus
+        parent_id = self.canvas.delete_node(focus.id)
+
+        if parent_id:
+            self.canvas.set_focus(parent_id)
+            self.notify("node deleted")
+        else:
+            self.notify("delete failed", severity="error")
+
+        self._refresh_all()
+        self._auto_save()
 
     def action_load(self) -> None:
         """load a canvas from ~/.runeforge-canvas/."""
@@ -463,6 +598,21 @@ class RuneforgeCanvas(App):
         first_button = ops.query("Button").first()
         if first_button:
             first_button.focus()
+
+    def action_focus_minimap(self) -> None:
+        """focus the minimap for keyboard navigation."""
+        minimap = self.query_one("#minimap", Minimap)
+        minimap.focus()
+
+    def action_toggle_expand(self) -> None:
+        """toggle expansion of focused node in active path."""
+        active_path = self.query_one("#active-path", ActivePath)
+        # find the focused node widget and toggle it
+        for widget in active_path.query(NodeWidget):
+            if hasattr(widget, "is_focused") and widget.is_focused:
+                widget.expanded = not widget.expanded
+                self.notify("expanded" if widget.expanded else "collapsed", timeout=1)
+                break
 
     def action_execute(self) -> None:
         """execute the plan in claude code."""
@@ -570,11 +720,12 @@ when done, summarize what was completed vs what diverged from the plan."""
         self.notify("review node created - expand to see execution log")
 
 
-def run(canvas_path: Optional[str] = None, skills_dir: Optional[str] = None) -> None:
+def run(canvas_path: Optional[str] = None, skills_dir: Optional[str] = None, mock: bool = False) -> None:
     """run the runeforge canvas app."""
     app = RuneforgeCanvas(
         canvas_path=Path(canvas_path) if canvas_path else None,
         skills_dir=Path(skills_dir) if skills_dir else None,
+        mock=mock,
     )
     app.run()
 
