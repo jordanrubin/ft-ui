@@ -604,9 +604,35 @@ def _generate_id() -> str:
 
 
 def _compress(content: str, max_len: int = DEFAULT_COMPRESSION_LENGTH) -> str:
-    """compress content to ≤max_len chars."""
-    # take first line or first max_len chars
-    first_line = content.split("\n")[0].strip()
+    """compress content to ≤max_len chars, skipping preamble."""
+    # common preamble patterns to skip
+    skip_patterns = [
+        "i'll apply", "i will apply", "okay", "ok,", "sure,", "let me",
+        "i'll run", "i will run", "applying", "running", "here's",
+        "---",  # markdown dividers
+    ]
+
+    lines = [l.strip() for l in content.split("\n") if l.strip()]
+
+    # find first substantive line (not preamble, not just punctuation/dividers)
+    for line in lines:
+        line_lower = line.lower()
+        # skip if it matches preamble patterns
+        if any(line_lower.startswith(p) for p in skip_patterns):
+            continue
+        # skip markdown headers that are just skill names
+        if line.startswith("#") and len(line) < 30:
+            continue
+        # skip very short lines (likely dividers)
+        if len(line) < 10:
+            continue
+        # found a substantive line
+        if len(line) <= max_len:
+            return line
+        return line[:max_len - 3] + "..."
+
+    # fallback to first line if nothing matched
+    first_line = lines[0] if lines else content[:max_len]
     if len(first_line) <= max_len:
         return first_line
     return first_line[:max_len - 3] + "..."
