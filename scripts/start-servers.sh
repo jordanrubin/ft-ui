@@ -23,7 +23,7 @@ sleep 1
 
 # start API server
 echo -e "${YELLOW}starting API server on :8000...${NC}"
-.venv/bin/runeforge-api --mock > /tmp/runeforge-api.log 2>&1 &
+.venv/bin/runeforge-api > /tmp/runeforge-api.log 2>&1 &
 API_PID=$!
 
 # start React dev server

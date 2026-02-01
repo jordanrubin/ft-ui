@@ -3,10 +3,14 @@ import { ReactFlowProvider } from '@xyflow/react';
 
 import CanvasView from './components/CanvasView';
 import NodeDrawer from './components/NodeDrawer';
+import Login from './components/Login';
 import { canvasApi, nodeApi, skillApi, linkApi, templateApi } from './api/client';
 import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem } from './types/canvas';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('rf-auth') === 'true';
+  });
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -255,6 +259,11 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
+
+  // Show login if not authenticated
+  if (!isAuthenticated) {
+    return <Login onLogin={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div style={{ height: '100vh', display: 'flex', background: '#0d1117' }}>
