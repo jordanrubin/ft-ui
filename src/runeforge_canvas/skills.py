@@ -25,17 +25,75 @@ class Skill:
         """display name with @ prefix."""
         return f"@{self.name}"
 
-    def build_prompt(self, context: str) -> str:
-        """build the full prompt for this skill with context."""
+    def build_prompt(self, context: str, params: Optional[dict] = None) -> str:
+        """build the full prompt for this skill with context and optional params."""
+        param_section = ""
+        if params:
+            param_lines = [f"- {k}: {v}" for k, v in params.items()]
+            param_section = f"\n<parameters>\n" + "\n".join(param_lines) + "\n</parameters>\n"
+
         return f"""<skill>
 {self.body}
 </skill>
-
+{param_section}
 <context>
 {context}
 </context>
 
 apply the skill above to the context. follow the skill's process exactly."""
+
+
+@dataclass
+class SkillInvocation:
+    """a single skill invocation with optional parameters."""
+
+    name: str
+    params: dict
+
+    @classmethod
+    def parse(cls, text: str) -> SkillInvocation:
+        """parse '@skill' or '@skill(param=value, param2=value2)'."""
+        text = text.strip().lstrip("@")
+
+        # check for params: skill(param=value)
+        match = re.match(r"(\w+)\(([^)]*)\)", text)
+        if match:
+            name = match.group(1)
+            params_str = match.group(2)
+            params = {}
+            if params_str:
+                for pair in params_str.split(","):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        params[k.strip()] = v.strip()
+            return cls(name=name, params=params)
+
+        # no params
+        return cls(name=text, params={})
+
+
+@dataclass
+class SkillChain:
+    """a chain of skills to run in sequence: @skill1 | @skill2 | @skill3."""
+
+    invocations: list[SkillInvocation]
+
+    @classmethod
+    def parse(cls, text: str) -> SkillChain:
+        """parse '@skill1 | @skill2' or '@skill1(p=v) | @skill2'."""
+        parts = [p.strip() for p in text.split("|")]
+        invocations = [SkillInvocation.parse(p) for p in parts if p]
+        return cls(invocations=invocations)
+
+    @property
+    def display_name(self) -> str:
+        """display name for the chain."""
+        names = [f"@{inv.name}" for inv in self.invocations]
+        return " | ".join(names)
+
+    def is_single(self) -> bool:
+        """check if this is a single skill (not a chain)."""
+        return len(self.invocations) == 1
 
 
 class SkillLoader:
@@ -77,6 +135,20 @@ class SkillLoader:
         self.load()
         name = name.lstrip("@")
         return self._skills.get(name)
+
+    def resolve_chain(self, chain: SkillChain) -> list[tuple[Skill, dict]]:
+        """resolve a skill chain to list of (skill, params) tuples.
+
+        raises ValueError if any skill in the chain is not found.
+        """
+        self.load()
+        resolved = []
+        for inv in chain.invocations:
+            skill = self._skills.get(inv.name)
+            if not skill:
+                raise ValueError(f"skill not found: @{inv.name}")
+            resolved.append((skill, inv.params))
+        return resolved
 
     def list_skills(self) -> list[Skill]:
         """list all loaded skills, ordered for plan-building workflow."""

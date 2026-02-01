@@ -6,6 +6,8 @@ graph-based thinking environment for runeforge skills.
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -15,11 +17,11 @@ from textual.widgets import Header, Footer, Static, Input
 from textual.binding import Binding
 
 from .models import Canvas, CanvasNode
-from .skills import SkillLoader, Skill, get_default_loader
+from .skills import SkillLoader, Skill, SkillChain, get_default_loader
 from .client import ClaudeClient
 from .widgets.minimap import Minimap, NodeClicked
 from .widgets.path import ActivePath
-from .widgets.operations import OperationsPanel, RunOperation, AddNote
+from .widgets.operations import OperationsPanel, RunOperation, RunChain, AddNote
 
 
 class RuneforgeCanvas(App):
@@ -63,6 +65,8 @@ class RuneforgeCanvas(App):
         Binding("q", "quit", "quit"),
         Binding("s", "save", "save"),
         Binding("e", "export", "export"),
+        Binding("x", "execute", "execute"),
+        Binding("r", "review", "review"),
         Binding("n", "new_canvas", "new"),
         Binding("escape", "focus_operations", "operations"),
     ]
@@ -79,6 +83,7 @@ class RuneforgeCanvas(App):
         self.canvas = Canvas(name="untitled")
         self._client: Optional[ClaudeClient] = None
         self._running_op = False
+        self._last_execution: Optional[Path] = None  # path to last execution log
 
     def compose(self) -> ComposeResult:
         """compose the app layout."""
@@ -186,6 +191,78 @@ class RuneforgeCanvas(App):
             return
 
         await self._run_operation(skill, focus)
+
+    async def on_run_chain(self, event: RunChain) -> None:
+        """handle skill chain submission."""
+        if self._running_op:
+            return
+
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        # parse chain
+        try:
+            chain = SkillChain.parse(event.chain_text)
+            resolved = self.skill_loader.resolve_chain(chain)
+        except ValueError as e:
+            self.notify(str(e), severity="error")
+            return
+
+        await self._run_chain(resolved, focus, chain.display_name)
+
+    async def _run_chain(
+        self,
+        chain: list[tuple[Skill, dict]],
+        focus: CanvasNode,
+        chain_name: str,
+    ) -> None:
+        """run a chain of skills, passing output as input to next."""
+        self._running_op = True
+        self._show_spinner()
+
+        try:
+            # gather initial context
+            context_nodes = self.canvas.get_context_for_operation(focus.id)
+            context_text = self._format_context(context_nodes)
+
+            # run each skill in sequence
+            current_input = context_text
+            results = []
+
+            for skill, params in chain:
+                prompt = skill.build_prompt(current_input, params)
+
+                if not self._client:
+                    raise RuntimeError("client not initialized")
+
+                result = await self._client.complete(prompt)
+                results.append(f"## {skill.display_name}\n\n{result}")
+
+                # output becomes input for next skill
+                current_input = result
+
+            # create single node with combined results
+            combined = "\n\n---\n\n".join(results)
+            new_node = CanvasNode.create_operation(
+                operation=chain_name,
+                content=combined,
+                parent_id=focus.id,
+                context_snapshot=[n.id for n in context_nodes],
+            )
+            self.canvas.add_node(new_node)
+            self.canvas.set_focus(new_node.id)
+
+            self._refresh_all()
+            self._auto_save()
+
+        except Exception as e:
+            self.notify(f"chain failed: {e}", severity="error")
+
+        finally:
+            self._running_op = False
+            self._hide_spinner()
 
     async def _run_operation(self, skill: Skill, focus: CanvasNode) -> None:
         """run a skill operation on the focused node."""
@@ -322,6 +399,111 @@ class RuneforgeCanvas(App):
         first_button = ops.query("Button").first()
         if first_button:
             first_button.focus()
+
+    def action_execute(self) -> None:
+        """execute the plan in claude code."""
+        if not self.canvas.active_path:
+            self.notify("nothing to execute", severity="warning")
+            return
+
+        # check claude is available
+        if not shutil.which("claude"):
+            self.notify("claude command not found - install claude code first", severity="error")
+            return
+
+        # flatten plan to markdown
+        lines = self._flatten_path()
+        plan_text = "\n\n".join(lines)
+
+        # create execution directory
+        exec_dir = Path.home() / ".runeforge-canvas" / "executions"
+        exec_dir.mkdir(parents=True, exist_ok=True)
+
+        # write plan file
+        import time
+        timestamp = int(time.time())
+        plan_path = exec_dir / f"plan-{timestamp}.md"
+        plan_path.write_text(plan_text)
+
+        # write execution log path (claude will write here)
+        log_path = exec_dir / f"exec-{timestamp}.log"
+        self._last_execution = log_path
+
+        # build prompt for claude
+        prompt = f"""execute this plan:
+
+{plan_text}
+
+work through each step. if you encounter issues, note them but continue.
+when done, summarize what was completed vs what diverged from the plan."""
+
+        # spawn claude in new terminal
+        # use subprocess to run claude with the prompt
+        try:
+            # write prompt to temp file for claude to read
+            prompt_path = exec_dir / f"prompt-{timestamp}.txt"
+            prompt_path.write_text(prompt)
+
+            # spawn claude with --print flag to capture output
+            # run in background, redirect output to log
+            subprocess.Popen(
+                f'claude --print "{prompt}" 2>&1 | tee "{log_path}"',
+                shell=True,
+                cwd=str(Path.cwd()),
+                start_new_session=True,
+            )
+
+            self.notify(f"executing plan... log: {log_path}")
+
+        except Exception as e:
+            self.notify(f"failed to spawn claude: {e}", severity="error")
+
+    def action_review(self) -> None:
+        """review the last execution, surface divergences."""
+        if not self._last_execution:
+            self.notify("no execution to review - press x first", severity="warning")
+            return
+
+        if not self._last_execution.exists():
+            self.notify("execution log not found yet - still running?", severity="warning")
+            return
+
+        # read execution log
+        try:
+            log_content = self._last_execution.read_text()
+        except Exception as e:
+            self.notify(f"failed to read log: {e}", severity="error")
+            return
+
+        if not log_content.strip():
+            self.notify("execution log is empty - still running?", severity="warning")
+            return
+
+        # create a review node as child of current focus
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        # create review node with execution results
+        review_content = f"""## execution review
+
+### log
+```
+{log_content[:2000]}{'...(truncated)' if len(log_content) > 2000 else ''}
+```
+
+### divergences
+(analyze above for plan vs actual differences)
+"""
+
+        review_node = CanvasNode.create_note(review_content, focus.id)
+        self.canvas.add_node(review_node)
+        self.canvas.set_focus(review_node.id)
+
+        self._refresh_all()
+        self._auto_save()
+        self.notify("review node created - expand to see execution log")
 
 
 def run(canvas_path: Optional[str] = None, skills_dir: Optional[str] = None) -> None:

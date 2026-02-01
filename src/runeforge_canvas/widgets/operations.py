@@ -20,6 +20,14 @@ class RunOperation(Message):
         super().__init__()
 
 
+class RunChain(Message):
+    """message emitted when a skill chain is submitted."""
+
+    def __init__(self, chain_text: str) -> None:
+        self.chain_text = chain_text
+        super().__init__()
+
+
 class AddNote(Message):
     """message emitted when user submits a note."""
 
@@ -87,6 +95,16 @@ class OperationsPanel(Vertical):
         if row_skills:
             yield self._make_row(row_skills)
 
+        # chain input
+        yield Static("chain (e.g. @excavate | @stressify)", classes="label")
+        with Horizontal(classes="note-row"):
+            yield Input(
+                placeholder="@skill1 | @skill2(param=value)",
+                id="chain-input",
+                classes="note-input",
+            )
+            yield Button("run", id="run-chain", classes="note-button")
+
         # note input
         yield Static("add note", classes="label")
         with Horizontal(classes="note-row"):
@@ -117,13 +135,25 @@ class OperationsPanel(Vertical):
         if btn_id.startswith("op-"):
             skill_name = btn_id[3:]  # strip "op-" prefix
             self.post_message(RunOperation(skill_name))
+        elif btn_id == "run-chain":
+            self._submit_chain()
         elif btn_id == "add-note":
             self._submit_note()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """handle enter in note input."""
+        """handle enter in inputs."""
         if event.input.id == "note-input":
             self._submit_note()
+        elif event.input.id == "chain-input":
+            self._submit_chain()
+
+    def _submit_chain(self) -> None:
+        """submit the chain input."""
+        chain_input = self.query_one("#chain-input", Input)
+        chain_text = chain_input.value.strip()
+        if chain_text:
+            self.post_message(RunChain(chain_text))
+            chain_input.value = ""
 
     def _submit_note(self) -> None:
         """submit the current note."""
