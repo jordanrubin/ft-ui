@@ -10,11 +10,20 @@ from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from ..core.models import Canvas, CanvasNode, NodeType
+from ..core.models import (
+    Canvas,
+    CanvasNode,
+    NodeType,
+    list_saved_canvases,
+    get_canvas_dir,
+    list_templates,
+    get_template,
+)
 from ..core.skills import SkillLoader, SkillChain, get_default_loader
 from ..core.client import ClaudeClient, MockClient, ClientProtocol
 
@@ -52,6 +61,25 @@ class CanvasCreate(BaseModel):
     """request to create a new canvas."""
     name: str
     root_content: str
+    template: Optional[str] = None  # template name to use
+
+
+class NodeEdit(BaseModel):
+    """request to edit a node."""
+    content: str
+
+
+class SearchRequest(BaseModel):
+    """request to search canvas."""
+    query: str
+    case_sensitive: bool = False
+    use_regex: bool = False
+
+
+class LinkRequest(BaseModel):
+    """request to add/remove a link."""
+    from_id: str
+    to_id: str
 
 
 class NodeResponse(BaseModel):
@@ -62,7 +90,8 @@ class NodeResponse(BaseModel):
     content_compressed: str
     operation: Optional[str]
     parent_id: Optional[str]
-    children: list[str]
+    children_ids: list[str]
+    links_to: list[str]
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
@@ -73,7 +102,8 @@ class NodeResponse(BaseModel):
             content_compressed=node.content_compressed,
             operation=node.operation,
             parent_id=node.parent_id,
-            children=node.children,
+            children_ids=node.children_ids,
+            links_to=node.links_to,
         )
 
 
@@ -83,6 +113,8 @@ class CanvasResponse(BaseModel):
     nodes: dict[str, NodeResponse]
     root_id: Optional[str]
     active_path: list[str]
+    can_undo: bool
+    can_redo: bool
 
     @classmethod
     def from_canvas(cls, canvas: Canvas) -> "CanvasResponse":
@@ -91,7 +123,35 @@ class CanvasResponse(BaseModel):
             nodes={k: NodeResponse.from_node(v) for k, v in canvas.nodes.items()},
             root_id=canvas.root_id,
             active_path=canvas.active_path,
+            can_undo=canvas.can_undo(),
+            can_redo=canvas.can_redo(),
         )
+
+
+class CanvasListItem(BaseModel):
+    """canvas summary for listing."""
+    name: str
+    path: str
+    created_at: str
+    modified_at: str
+    node_count: int
+
+
+class TemplateInfo(BaseModel):
+    """template info for listing."""
+    name: str
+    display_name: str
+    description: str
+
+
+class StatisticsResponse(BaseModel):
+    """canvas statistics."""
+    total_nodes: int
+    max_depth: int
+    branch_count: int
+    leaf_count: int
+    node_types: dict[str, int]
+    operations_used: dict[str, int]
 
 
 class SkillInfo(BaseModel):
@@ -393,6 +453,235 @@ respond thoughtfully to the user's question about this context. be specific and 
     state.canvas.set_focus(new_node.id)
 
     return NodeResponse.from_node(new_node)
+
+
+# --- canvas management endpoints ---
+
+@app.get("/canvases", response_model=list[CanvasListItem])
+async def list_canvases():
+    """list all saved canvases."""
+    return [
+        CanvasListItem(
+            name=c["name"],
+            path=c["path"],
+            created_at=c["created_at"],
+            modified_at=c["modified_at"],
+            node_count=c["node_count"],
+        )
+        for c in list_saved_canvases()
+    ]
+
+
+@app.get("/templates", response_model=list[TemplateInfo])
+async def get_templates():
+    """list available templates."""
+    from ..core.models import BUILTIN_TEMPLATES
+    return [
+        TemplateInfo(
+            name=key,
+            display_name=t.name,
+            description=t.description,
+        )
+        for key, t in BUILTIN_TEMPLATES.items()
+    ]
+
+
+@app.post("/canvas/from-template", response_model=CanvasResponse)
+async def create_from_template(template_name: str, canvas_name: str):
+    """create a new canvas from a template."""
+    template = get_template(template_name)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"template not found: {template_name}")
+
+    state.canvas = Canvas(name=canvas_name)
+    root = CanvasNode.create_root(template.root_content)
+    state.canvas.add_node(root)
+
+    return CanvasResponse.from_canvas(state.canvas)
+
+
+# --- undo/redo endpoints ---
+
+@app.post("/canvas/undo", response_model=CanvasResponse)
+async def undo():
+    """undo last action."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.undo():
+        raise HTTPException(status_code=400, detail="nothing to undo")
+
+    return CanvasResponse.from_canvas(state.canvas)
+
+
+@app.post("/canvas/redo", response_model=CanvasResponse)
+async def redo():
+    """redo last undone action."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.redo():
+        raise HTTPException(status_code=400, detail="nothing to redo")
+
+    return CanvasResponse.from_canvas(state.canvas)
+
+
+# --- node editing endpoints ---
+
+@app.put("/node/{node_id}", response_model=NodeResponse)
+async def edit_node(node_id: str, req: NodeEdit):
+    """edit a node's content."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.edit_node(node_id, req.content):
+        raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
+
+    return NodeResponse.from_node(state.canvas.nodes[node_id])
+
+
+# --- search endpoints ---
+
+@app.post("/canvas/search", response_model=list[NodeResponse])
+async def search_canvas(req: SearchRequest):
+    """search canvas nodes."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if req.use_regex:
+        results = state.canvas.search_regex(req.query)
+    else:
+        results = state.canvas.search(req.query, req.case_sensitive)
+
+    return [NodeResponse.from_node(n) for n in results]
+
+
+# --- sibling navigation endpoints ---
+
+@app.get("/node/{node_id}/siblings", response_model=list[NodeResponse])
+async def get_siblings(node_id: str):
+    """get sibling nodes."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    siblings = state.canvas.get_siblings(node_id)
+    return [NodeResponse.from_node(n) for n in siblings]
+
+
+@app.get("/node/{node_id}/next-sibling", response_model=Optional[NodeResponse])
+async def get_next_sibling(node_id: str):
+    """get next sibling node."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    sibling = state.canvas.get_next_sibling(node_id)
+    return NodeResponse.from_node(sibling) if sibling else None
+
+
+@app.get("/node/{node_id}/prev-sibling", response_model=Optional[NodeResponse])
+async def get_prev_sibling(node_id: str):
+    """get previous sibling node."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    sibling = state.canvas.get_prev_sibling(node_id)
+    return NodeResponse.from_node(sibling) if sibling else None
+
+
+# --- cross-linking endpoints ---
+
+@app.post("/link", response_model=NodeResponse)
+async def add_link(req: LinkRequest):
+    """add a cross-link between nodes."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.add_link(req.from_id, req.to_id):
+        raise HTTPException(status_code=400, detail="could not add link (invalid nodes or already linked)")
+
+    return NodeResponse.from_node(state.canvas.nodes[req.from_id])
+
+
+@app.delete("/link")
+async def remove_link(from_id: str, to_id: str):
+    """remove a cross-link between nodes."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.remove_link(from_id, to_id):
+        raise HTTPException(status_code=400, detail="could not remove link")
+
+    return {"removed": True}
+
+
+@app.get("/node/{node_id}/links", response_model=list[NodeResponse])
+async def get_linked_nodes(node_id: str):
+    """get nodes linked from this node."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    linked = state.canvas.get_linked_nodes(node_id)
+    return [NodeResponse.from_node(n) for n in linked]
+
+
+@app.get("/node/{node_id}/backlinks", response_model=list[NodeResponse])
+async def get_backlinks(node_id: str):
+    """get nodes that link to this node."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    backlinks = state.canvas.get_backlinks(node_id)
+    return [NodeResponse.from_node(n) for n in backlinks]
+
+
+# --- statistics endpoint ---
+
+@app.get("/canvas/statistics", response_model=StatisticsResponse)
+async def get_statistics():
+    """get canvas statistics."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    stats = state.canvas.get_statistics()
+    return StatisticsResponse(**stats)
+
+
+# --- export endpoints ---
+
+@app.get("/canvas/export/markdown", response_class=PlainTextResponse)
+async def export_markdown():
+    """export canvas as markdown."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    return state.canvas.export_markdown()
+
+
+@app.get("/canvas/export/mermaid", response_class=PlainTextResponse)
+async def export_mermaid():
+    """export canvas as mermaid flowchart."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    return state.canvas.export_mermaid()
+
+
+@app.get("/canvas/export/outline", response_class=PlainTextResponse)
+async def export_outline():
+    """export canvas as plain text outline."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    return state.canvas.export_outline()
+
+
+@app.get("/canvas/export/json")
+async def export_json():
+    """export canvas as JSON."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    return state.canvas.to_dict()
 
 
 # --- entrypoint ---
