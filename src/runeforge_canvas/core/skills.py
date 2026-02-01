@@ -219,9 +219,10 @@ class SkillLoader:
         return frontmatter, body
 
 
-# default loader paths
-_public_skills_dir = Path(__file__).parent.parent.parent.parent / "runeforge" / "public"
-_full_skills_dir = Path(__file__).parent.parent.parent.parent / "runeforge" / "runeforge"
+# default loader paths - look for sibling runeforge repo
+_project_root = Path(__file__).parent.parent.parent.parent  # ft-ui/
+_public_skills_dir = _project_root.parent / "runeforge" / "public"
+_full_skills_dir = _project_root.parent / "runeforge" / "runeforge"
 
 
 def get_default_loader(full: bool = False) -> SkillLoader:
