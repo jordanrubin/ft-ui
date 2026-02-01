@@ -94,11 +94,16 @@ export default function App() {
   const handleSkillRun = useCallback(
     async (skillName: string) => {
       if (!selectedNode) return;
+      setSelectedNode(null); // close drawer
       setIsRunning(true);
       setError(null);
       try {
-        await skillApi.run(skillName, selectedNode.id);
+        const newNode = await skillApi.run(skillName, selectedNode.id);
         await refreshCanvas();
+        // focus the new node
+        if (newNode?.id) {
+          setSelectedNode(newNode);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Skill failed');
       } finally {
@@ -111,11 +116,15 @@ export default function App() {
   const handleSkillRunOnSelection = useCallback(
     async (skillName: string, selectedContent: string) => {
       if (!selectedNode) return;
+      setSelectedNode(null); // close drawer
       setIsRunning(true);
       setError(null);
       try {
-        await skillApi.runOnSelection(skillName, selectedNode.id, selectedContent);
+        const newNode = await skillApi.runOnSelection(skillName, selectedNode.id, selectedContent);
         await refreshCanvas();
+        if (newNode?.id) {
+          setSelectedNode(newNode);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Skill on selection failed');
       } finally {
@@ -128,11 +137,15 @@ export default function App() {
   const handleChatSubmit = useCallback(
     async (prompt: string) => {
       if (!selectedNode) return;
+      setSelectedNode(null); // close drawer
       setIsRunning(true);
       setError(null);
       try {
-        await skillApi.runChat(prompt, selectedNode.id);
+        const newNode = await skillApi.runChat(prompt, selectedNode.id);
         await refreshCanvas();
+        if (newNode?.id) {
+          setSelectedNode(newNode);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Chat failed');
       } finally {
@@ -387,6 +400,47 @@ export default function App() {
         >
           {showSidebar ? '◀' : '▶'}
         </button>
+
+        {/* Loading overlay */}
+        {isRunning && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(13, 17, 23, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 100,
+            }}
+          >
+            <div
+              style={{
+                padding: '24px 48px',
+                background: '#161b22',
+                borderRadius: '12px',
+                border: '1px solid #30363d',
+                textAlign: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  border: '3px solid #30363d',
+                  borderTopColor: '#58a6ff',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite',
+                  margin: '0 auto 16px',
+                }}
+              />
+              <div style={{ color: '#e0e0e0', fontSize: '16px' }}>Running operation...</div>
+            </div>
+          </div>
+        )}
 
         {/* Error display */}
         {error && (
