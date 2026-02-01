@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import type { CanvasNode, SkillInfo } from '../types/canvas';
-import { skillApi, nodeApi, linkApi } from '../api/client';
+import SubsectionViewer from './SubsectionViewer';
+import { isStructuredResponse } from '../utils/responseParser';
 
 interface NodeDrawerProps {
   node: CanvasNode | null;
   skills: SkillInfo[];
   onClose: () => void;
   onSkillRun: (skillName: string) => void;
+  onSkillRunOnSelection: (skillName: string, content: string) => void;
   onChatSubmit: (prompt: string) => void;
   onNodeEdit: (content: string) => void;
   onNodeDelete: () => void;
@@ -21,6 +23,7 @@ export default function NodeDrawer({
   skills,
   onClose,
   onSkillRun,
+  onSkillRunOnSelection,
   onChatSubmit,
   onNodeEdit,
   onNodeDelete,
@@ -208,21 +211,31 @@ export default function NodeDrawer({
               </div>
             ) : (
               <div>
-                <div
-                  style={{
-                    padding: '16px',
-                    background: '#0d1117',
-                    borderRadius: '6px',
-                    color: '#e0e0e0',
-                    fontSize: '14px',
-                    lineHeight: '1.6',
-                    whiteSpace: 'pre-wrap',
-                    maxHeight: '300px',
-                    overflow: 'auto',
-                  }}
-                >
-                  {node.content_full}
-                </div>
+                {/* Use SubsectionViewer for structured skill responses */}
+                {node.type === 'operation' && isStructuredResponse(node.content_full) ? (
+                  <SubsectionViewer
+                    node={node}
+                    skills={skills}
+                    onSkillRunOnSelection={onSkillRunOnSelection}
+                    isRunning={isRunning}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      padding: '16px',
+                      background: '#0d1117',
+                      borderRadius: '6px',
+                      color: '#e0e0e0',
+                      fontSize: '14px',
+                      lineHeight: '1.6',
+                      whiteSpace: 'pre-wrap',
+                      maxHeight: '300px',
+                      overflow: 'auto',
+                    }}
+                  >
+                    {node.content_full}
+                  </div>
+                )}
                 <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
                   <button
                     onClick={() => setIsEditing(true)}
