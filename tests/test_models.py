@@ -4,7 +4,14 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.core.models import Canvas, CanvasNode, NodeType
+from runeforge_canvas.core.models import (
+    Canvas,
+    CanvasNode,
+    NodeType,
+    list_templates,
+    get_template,
+    BUILTIN_TEMPLATES,
+)
 
 
 class TestCanvasNode:
@@ -222,3 +229,334 @@ class TestCanvas:
 
         # should now focus parent
         assert canvas.active_path == [root.id]
+
+    # --- undo/redo tests ---
+
+    def test_undo_redo_add_node(self):
+        """undo/redo works for add_node."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("child", root.id)
+        canvas.add_node(child)
+
+        assert len(canvas.nodes) == 2
+        assert canvas.can_undo()
+
+        # undo add
+        canvas.undo()
+        assert len(canvas.nodes) == 1
+        assert child.id not in canvas.nodes
+
+        # redo add
+        assert canvas.can_redo()
+        canvas.redo()
+        assert len(canvas.nodes) == 2
+        assert child.id in canvas.nodes
+
+    def test_undo_redo_delete_node(self):
+        """undo/redo works for delete_node."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("child", root.id)
+        canvas.add_node(child)
+
+        canvas.delete_node(child.id)
+        assert child.id not in canvas.nodes
+
+        # undo delete
+        canvas.undo()
+        assert child.id in canvas.nodes
+
+    def test_undo_nothing(self):
+        """undo returns False when nothing to undo."""
+        canvas = Canvas(name="test")
+        assert not canvas.can_undo()
+        assert not canvas.undo()
+
+    # --- search tests ---
+
+    def test_search_basic(self):
+        """basic search finds matching nodes."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("important goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("another note", root.id)
+        canvas.add_node(child)
+
+        results = canvas.search("important")
+        assert len(results) == 1
+        assert results[0].id == root.id
+
+    def test_search_case_insensitive(self):
+        """search is case insensitive by default."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("IMPORTANT goal")
+        canvas.add_node(root)
+
+        results = canvas.search("important")
+        assert len(results) == 1
+
+    def test_search_regex(self):
+        """regex search works."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("feature-123")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("bug-456", root.id)
+        canvas.add_node(child)
+
+        results = canvas.search_regex(r"feature-\d+")
+        assert len(results) == 1
+        assert results[0].id == root.id
+
+    # --- sibling navigation tests ---
+
+    def test_get_siblings(self):
+        """get_siblings returns other children of same parent."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        siblings = canvas.get_siblings(child1.id)
+        assert len(siblings) == 1
+        assert siblings[0].id == child2.id
+
+    def test_get_next_sibling(self):
+        """get_next_sibling returns next in order."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        next_sib = canvas.get_next_sibling(child1.id)
+        assert next_sib is not None
+        assert next_sib.id == child2.id
+
+        # child2 has no next sibling
+        assert canvas.get_next_sibling(child2.id) is None
+
+    def test_get_prev_sibling(self):
+        """get_prev_sibling returns previous in order."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        prev_sib = canvas.get_prev_sibling(child2.id)
+        assert prev_sib is not None
+        assert prev_sib.id == child1.id
+
+        # child1 has no prev sibling
+        assert canvas.get_prev_sibling(child1.id) is None
+
+    # --- cross-linking tests ---
+
+    def test_add_link(self):
+        """add_link creates cross-link."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        result = canvas.add_link(child1.id, child2.id)
+        assert result is True
+        assert child2.id in canvas.nodes[child1.id].links_to
+
+    def test_add_link_duplicate(self):
+        """add_link returns False for duplicate."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        canvas.add_link(child1.id, child2.id)
+        result = canvas.add_link(child1.id, child2.id)
+        assert result is False
+
+    def test_get_linked_nodes(self):
+        """get_linked_nodes returns linked nodes."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        canvas.add_link(child1.id, child2.id)
+
+        linked = canvas.get_linked_nodes(child1.id)
+        assert len(linked) == 1
+        assert linked[0].id == child2.id
+
+    def test_get_backlinks(self):
+        """get_backlinks returns nodes linking to this one."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_note("child2", root.id)
+        canvas.add_node(child2)
+
+        canvas.add_link(child1.id, child2.id)
+
+        backlinks = canvas.get_backlinks(child2.id)
+        assert len(backlinks) == 1
+        assert backlinks[0].id == child1.id
+
+    # --- edit node tests ---
+
+    def test_edit_node(self):
+        """edit_node updates content."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("original")
+        canvas.add_node(root)
+
+        result = canvas.edit_node(root.id, "updated content")
+        assert result is True
+        assert canvas.nodes[root.id].content_full == "updated content"
+        assert canvas.nodes[root.id].content_compressed == "updated content"
+
+    def test_edit_node_undo(self):
+        """edit_node can be undone."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("original")
+        canvas.add_node(root)
+
+        canvas.edit_node(root.id, "updated")
+        canvas.undo()
+
+        assert canvas.nodes[root.id].content_full == "original"
+
+    # --- statistics tests ---
+
+    def test_get_statistics(self):
+        """get_statistics returns correct counts."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_note("child1", root.id)
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_operation(
+            operation="@excavate",
+            content="result",
+            parent_id=root.id,
+            context_snapshot=[root.id],
+        )
+        canvas.add_node(child2)
+
+        stats = canvas.get_statistics()
+        assert stats["total_nodes"] == 3
+        assert stats["max_depth"] == 1
+        assert stats["branch_count"] == 1  # root has 2 children
+        assert stats["leaf_count"] == 2  # child1 and child2
+        assert stats["node_types"]["root"] == 1
+        assert stats["node_types"]["user"] == 1
+        assert stats["node_types"]["operation"] == 1
+        assert stats["operations_used"]["@excavate"] == 1
+
+    # --- export tests ---
+
+    def test_export_markdown(self):
+        """export_markdown produces valid output."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("my goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("a note", root.id)
+        canvas.add_node(child)
+
+        md = canvas.export_markdown()
+        assert "**[root]**" in md
+        assert "my goal" in md
+        assert "a note" in md
+
+    def test_export_mermaid(self):
+        """export_mermaid produces valid flowchart."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("note", root.id)
+        canvas.add_node(child)
+
+        mermaid = canvas.export_mermaid()
+        assert "flowchart TD" in mermaid
+        assert f"{root.id} --> {child.id}" in mermaid
+
+    def test_export_outline(self):
+        """export_outline produces text outline."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child = CanvasNode.create_note("note", root.id)
+        canvas.add_node(child)
+
+        outline = canvas.export_outline()
+        assert "goal" in outline
+        assert "note" in outline
+
+
+class TestTemplates:
+    """tests for template system."""
+
+    def test_list_templates(self):
+        """list_templates returns all templates."""
+        templates = list_templates()
+        assert len(templates) >= 4  # blank, feature, bug, decision, refactor
+
+    def test_get_template(self):
+        """get_template returns specific template."""
+        template = get_template("feature")
+        assert template is not None
+        assert template.name == "Feature Spec"
+
+    def test_get_template_not_found(self):
+        """get_template returns None for unknown."""
+        template = get_template("nonexistent")
+        assert template is None
+
+    def test_builtin_templates_have_required_fields(self):
+        """all templates have name and description."""
+        for key, template in BUILTIN_TEMPLATES.items():
+            assert template.name, f"{key} missing name"
+            assert template.description, f"{key} missing description"

@@ -71,6 +71,25 @@ class RuneforgeCanvas(App):
         Binding("m", "focus_minimap", "minimap"),
         Binding("o", "toggle_expand", "expand"),
         Binding("escape", "focus_operations", "operations"),
+        # undo/redo
+        Binding("u", "undo", "undo"),
+        Binding("ctrl+r", "redo", "redo"),
+        # sibling navigation
+        Binding("[", "prev_sibling", "prev sibling"),
+        Binding("]", "next_sibling", "next sibling"),
+        # search
+        Binding("/", "search", "search"),
+        # skill hotkeys 1-9, 0 for 10th skill
+        Binding("1", "skill_1", "skill 1", show=False),
+        Binding("2", "skill_2", "skill 2", show=False),
+        Binding("3", "skill_3", "skill 3", show=False),
+        Binding("4", "skill_4", "skill 4", show=False),
+        Binding("5", "skill_5", "skill 5", show=False),
+        Binding("6", "skill_6", "skill 6", show=False),
+        Binding("7", "skill_7", "skill 7", show=False),
+        Binding("8", "skill_8", "skill 8", show=False),
+        Binding("9", "skill_9", "skill 9", show=False),
+        Binding("0", "skill_10", "skill 10", show=False),
     ]
 
     def __init__(
@@ -718,6 +737,124 @@ when done, summarize what was completed vs what diverged from the plan."""
         self._refresh_all()
         self._auto_save()
         self.notify("review node created - expand to see execution log")
+
+    # --- undo/redo actions ---
+
+    def action_undo(self) -> None:
+        """undo last action."""
+        if self.canvas.undo():
+            self._refresh_all()
+            self.notify("undone", timeout=1)
+        else:
+            self.notify("nothing to undo", severity="warning", timeout=1)
+
+    def action_redo(self) -> None:
+        """redo last undone action."""
+        if self.canvas.redo():
+            self._refresh_all()
+            self.notify("redone", timeout=1)
+        else:
+            self.notify("nothing to redo", severity="warning", timeout=1)
+
+    # --- sibling navigation actions ---
+
+    def action_next_sibling(self) -> None:
+        """navigate to next sibling node."""
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        next_sib = self.canvas.get_next_sibling(focus.id)
+        if next_sib:
+            self.canvas.set_focus(next_sib.id)
+            self._refresh_all()
+            self.notify(f"→ {next_sib.content_compressed[:30]}", timeout=1)
+        else:
+            self.notify("no next sibling", timeout=1)
+
+    def action_prev_sibling(self) -> None:
+        """navigate to previous sibling node."""
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        prev_sib = self.canvas.get_prev_sibling(focus.id)
+        if prev_sib:
+            self.canvas.set_focus(prev_sib.id)
+            self._refresh_all()
+            self.notify(f"← {prev_sib.content_compressed[:30]}", timeout=1)
+        else:
+            self.notify("no prev sibling", timeout=1)
+
+    # --- search action ---
+
+    def action_search(self) -> None:
+        """show search input."""
+        # for now, use notify to indicate feature
+        # full implementation would show a modal/input
+        self.notify("search: type in operations panel chat input", timeout=2)
+
+    # --- skill hotkey actions ---
+
+    async def _run_skill_by_index(self, index: int) -> None:
+        """run skill by its index (0-9)."""
+        if index >= len(self.skills):
+            self.notify(f"no skill at position {index + 1}", severity="warning")
+            return
+
+        skill = self.skills[index]
+        focus = self.canvas.get_focus_node()
+        if not focus:
+            self.notify("no node focused", severity="warning")
+            return
+
+        if self._running_op:
+            self.notify("operation already running", severity="warning")
+            return
+
+        await self._run_operation(skill, focus)
+
+    async def action_skill_1(self) -> None:
+        """run skill 1."""
+        await self._run_skill_by_index(0)
+
+    async def action_skill_2(self) -> None:
+        """run skill 2."""
+        await self._run_skill_by_index(1)
+
+    async def action_skill_3(self) -> None:
+        """run skill 3."""
+        await self._run_skill_by_index(2)
+
+    async def action_skill_4(self) -> None:
+        """run skill 4."""
+        await self._run_skill_by_index(3)
+
+    async def action_skill_5(self) -> None:
+        """run skill 5."""
+        await self._run_skill_by_index(4)
+
+    async def action_skill_6(self) -> None:
+        """run skill 6."""
+        await self._run_skill_by_index(5)
+
+    async def action_skill_7(self) -> None:
+        """run skill 7."""
+        await self._run_skill_by_index(6)
+
+    async def action_skill_8(self) -> None:
+        """run skill 8."""
+        await self._run_skill_by_index(7)
+
+    async def action_skill_9(self) -> None:
+        """run skill 9."""
+        await self._run_skill_by_index(8)
+
+    async def action_skill_10(self) -> None:
+        """run skill 10 (key 0)."""
+        await self._run_skill_by_index(9)
 
 
 def run(canvas_path: Optional[str] = None, skills_dir: Optional[str] = None, mock: bool = False) -> None:
