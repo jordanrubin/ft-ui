@@ -12,7 +12,6 @@ from typing import Optional
 from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
-    UserMessage,
 )
 
 
@@ -59,19 +58,23 @@ class ClaudeClient:
         if not self._client or not self._connected:
             raise RuntimeError("client not connected - use async with or call connect()")
 
+        # send the query
+        await self._client.query(prompt)
+
+        # collect response
         text_parts: list[str] = []
 
-        async for event in self._client.process_query(prompt):
-            # collect text from assistant messages
-            if hasattr(event, "type"):
-                if event.type == "assistant" and hasattr(event, "message"):
-                    msg = event.message
-                    if hasattr(msg, "content"):
-                        for block in msg.content:
-                            if hasattr(block, "text"):
-                                text_parts.append(block.text)
+        async for event in self._client.receive_response():
+            # check for text content in assistant messages
+            if hasattr(event, "message") and hasattr(event.message, "content"):
+                for block in event.message.content:
+                    if hasattr(block, "text"):
+                        text_parts.append(block.text)
+            # also check for direct text attribute
+            elif hasattr(event, "text"):
+                text_parts.append(event.text)
 
-        return "\n".join(text_parts)
+        return "\n".join(text_parts) if text_parts else "(no response)"
 
 
 async def run_skill(skill_prompt: str, cwd: Optional[Path] = None) -> str:

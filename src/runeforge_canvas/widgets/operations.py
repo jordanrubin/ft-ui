@@ -89,11 +89,11 @@ class OperationsPanel(Vertical):
         for skill in self.skills:
             row_skills.append(skill)
             if len(row_skills) == 4:
-                yield self._make_row(row_skills)
+                yield from self._make_row(row_skills)
                 row_skills = []
 
         if row_skills:
-            yield self._make_row(row_skills)
+            yield from self._make_row(row_skills)
 
         # chain input
         yield Static("chain (e.g. @excavate | @stressify)", classes="label")
@@ -115,18 +115,16 @@ class OperationsPanel(Vertical):
             )
             yield Button("add", id="add-note", classes="note-button")
 
-    def _make_row(self, skills: list[Skill]) -> Horizontal:
+    def _make_row(self, skills: list[Skill]):
         """make a row of skill buttons."""
-        row = Horizontal(classes="op-row")
-        for skill in skills:
-            btn = Button(
-                skill.display_name,
-                id=f"op-{skill.name}",
-                classes="op-button",
-            )
-            btn.tooltip = skill.description[:80] if skill.description else None
-            row.compose_add_child(btn)
-        return row
+        with Horizontal(classes="op-row"):
+            for skill in skills:
+                yield Button(
+                    skill.display_name,
+                    id=f"op-{skill.name}",
+                    classes="op-button",
+                    tooltip=skill.description[:80] if skill.description else None,
+                )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """handle button press."""
