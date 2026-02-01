@@ -5,7 +5,7 @@ click to apply a skill to the focused node.
 
 from __future__ import annotations
 
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, Grid
 from textual.widgets import Button, Static, Input
 from textual.message import Message
 
@@ -47,14 +47,15 @@ class OperationsPanel(Vertical):
         border: solid $surface-lighten-2;
     }
 
-    OperationsPanel .op-row {
+    OperationsPanel .op-grid {
+        grid-size: 4;
+        grid-gutter: 1;
         height: auto;
         margin-bottom: 1;
     }
 
     OperationsPanel .op-button {
         min-width: 16;
-        margin: 0 1 0 0;
     }
 
     OperationsPanel .note-row {
@@ -82,18 +83,16 @@ class OperationsPanel(Vertical):
 
     def compose(self):
         """compose the operations grid."""
-        yield Static("operations", classes="label")
+        yield Static("operations (use arrow keys to navigate, enter to run)", classes="label")
 
-        # operation buttons in rows of 4
-        row_skills: list[Skill] = []
-        for skill in self.skills:
-            row_skills.append(skill)
-            if len(row_skills) == 4:
-                yield from self._make_row(row_skills)
-                row_skills = []
-
-        if row_skills:
-            yield from self._make_row(row_skills)
+        # operation buttons in a grid - better keyboard navigation
+        with Grid(classes="op-grid"):
+            for skill in self.skills:
+                yield Button(
+                    skill.display_name,
+                    id=f"op-{skill.name}",
+                    classes="op-button",
+                )
 
         # chain input
         yield Static("chain (e.g. @excavate | @stressify)", classes="label")
@@ -114,17 +113,6 @@ class OperationsPanel(Vertical):
                 classes="note-input",
             )
             yield Button("add", id="add-note", classes="note-button")
-
-    def _make_row(self, skills: list[Skill]):
-        """make a row of skill buttons."""
-        with Horizontal(classes="op-row"):
-            for skill in skills:
-                yield Button(
-                    skill.display_name,
-                    id=f"op-{skill.name}",
-                    classes="op-button",
-                    tooltip=skill.description[:80] if skill.description else None,
-                )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """handle button press."""
