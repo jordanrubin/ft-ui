@@ -348,7 +348,19 @@ export function isStructuredResponse(content: string): boolean {
   // Or must have skill-specific markers
   const hasSkillMarkers = /THESIS|ANTITHES|CRUX|FAILURE\s*MODE/i.test(content);
 
-  return hasNumberedItems || hasSkillMarkers;
+  // Or has multiple markdown headers (## sections)
+  const headerMatches = content.match(/^##\s+.+$/gm);
+  const hasMultipleSections = headerMatches && headerMatches.length >= 2;
+
+  // Or has rhyme/pattern markers
+  const hasRhymeMarkers = /rhyme|pattern|analog|motif|echo|structural\s*match/i.test(content);
+
+  // Or has bullet points with substantial content
+  const bulletMatches = content.match(/^\s*[-*•]\s+.{15,}/gm);
+  const hasSubstantialBullets = bulletMatches && bulletMatches.length >= 3;
+
+  return hasNumberedItems || hasSkillMarkers || hasMultipleSections ||
+         (hasRhymeMarkers && (hasSubstantialBullets || hasMultipleSections));
 }
 
 // Get suggested skills for a subsection based on its type
