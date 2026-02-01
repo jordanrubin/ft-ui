@@ -4,20 +4,22 @@ interface LoginProps {
   onLogin: () => void;
 }
 
-// Simple password check - in production use proper auth
+// Simple credentials - in production use proper auth
+const VALID_USERNAME = 'jr';
 const VALID_PASSWORD = 'runeforge2024';
 
 export default function Login({ onLogin }: LoginProps) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (password === VALID_PASSWORD) {
+    if (username === VALID_USERNAME && password === VALID_PASSWORD) {
       localStorage.setItem('rf-auth', 'true');
       onLogin();
     } else {
-      setError('Invalid password');
+      setError('Invalid username or password');
       setPassword('');
     }
   };
@@ -81,11 +83,30 @@ export default function Login({ onLogin }: LoginProps) {
         )}
 
         <input
+          type="text"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="Username"
+          autoFocus
+          autoComplete="username"
+          name="username"
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            marginBottom: '12px',
+            background: '#0d1117',
+            border: '1px solid #30363d',
+            borderRadius: '6px',
+            color: '#e0e0e0',
+            fontSize: '16px',
+          }}
+        />
+
+        <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
-          autoFocus
           autoComplete="current-password"
           name="password"
           style={{
