@@ -108,6 +108,23 @@ export default function App() {
     [selectedNode, refreshCanvas]
   );
 
+  const handleSkillRunOnSelection = useCallback(
+    async (skillName: string, selectedContent: string) => {
+      if (!selectedNode) return;
+      setIsRunning(true);
+      setError(null);
+      try {
+        await skillApi.runOnSelection(skillName, selectedNode.id, selectedContent);
+        await refreshCanvas();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Skill on selection failed');
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [selectedNode, refreshCanvas]
+  );
+
   const handleChatSubmit = useCallback(
     async (prompt: string) => {
       if (!selectedNode) return;
@@ -419,6 +436,7 @@ export default function App() {
           skills={skills}
           onClose={handleCloseDrawer}
           onSkillRun={handleSkillRun}
+          onSkillRunOnSelection={handleSkillRunOnSelection}
           onChatSubmit={handleChatSubmit}
           onNodeEdit={handleNodeEdit}
           onNodeDelete={handleNodeDelete}

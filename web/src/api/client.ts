@@ -131,6 +131,12 @@ export const skillApi = {
       body: JSON.stringify({ skill_name: skillName, node_id: nodeId, params }),
     }),
 
+  runOnSelection: (skillName: string, nodeId: string, selectedContent: string, params: Record<string, unknown> = {}) =>
+    request<CanvasNode>('/skill/run-on-selection', {
+      method: 'POST',
+      body: JSON.stringify({ skill_name: skillName, node_id: nodeId, selected_content: selectedContent, params }),
+    }),
+
   runChain: (chainText: string, nodeId: string) =>
     request<CanvasNode>('/chain/run', {
       method: 'POST',

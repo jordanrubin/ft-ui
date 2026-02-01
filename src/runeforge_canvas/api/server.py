@@ -51,6 +51,14 @@ class ChainRun(BaseModel):
     node_id: str
 
 
+class SkillRunOnSelection(BaseModel):
+    """request to run a skill on selected content."""
+    skill_name: str
+    node_id: str
+    selected_content: str
+    params: dict = {}
+
+
 class ChatRun(BaseModel):
     """request to run freeform chat."""
     prompt: str
@@ -355,6 +363,55 @@ async def run_skill(req: SkillRun):
 
     # build prompt and call api
     prompt = skill.build_prompt(context_text, req.params)
+    result = await state.client.complete(prompt)
+
+    # create result node
+    new_node = CanvasNode.create_operation(
+        operation=skill.display_name,
+        content=result,
+        parent_id=focus.id,
+        context_snapshot=[n.id for n in context_nodes],
+    )
+    state.canvas.add_node(new_node)
+    state.canvas.set_focus(new_node.id)
+
+    return NodeResponse.from_node(new_node)
+
+
+@app.post("/skill/run-on-selection", response_model=NodeResponse)
+async def run_skill_on_selection(req: SkillRunOnSelection):
+    """run a skill on selected content from a node."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    skill = state.skill_loader.get(req.skill_name)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"skill not found: {req.skill_name}")
+
+    focus = state.canvas.nodes.get(req.node_id)
+    if not focus:
+        raise HTTPException(status_code=404, detail=f"node not found: {req.node_id}")
+
+    # Build context from selected content only
+    # Include some parent context for grounding but focus on selected content
+    context_nodes = state.canvas.get_context_for_operation(focus.id)
+    parent_context = state.format_context(context_nodes[:-1]) if len(context_nodes) > 1 else ""
+
+    # Build prompt with selected content as primary input
+    selection_context = f"""<selection source="subsection of {focus.operation or 'node'}">
+{req.selected_content}
+</selection>"""
+
+    if parent_context:
+        full_context = f"""<parent_context>
+{parent_context}
+</parent_context>
+
+{selection_context}"""
+    else:
+        full_context = selection_context
+
+    prompt = skill.build_prompt(full_context, req.params)
     result = await state.client.complete(prompt)
 
     # create result node
