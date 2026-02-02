@@ -318,9 +318,23 @@ function parseMarkdownSections(content: string): Array<{ header: string; level: 
 
 /**
  * Detect the semantic type of a section based on its header and content
+ * Returns null for sections that shouldn't become cards (intro/context sections)
  */
-function detectSectionType(header: string, body: string): SubsectionType {
+function detectSectionType(header: string, body: string): SubsectionType | null {
   const headerLower = header.toLowerCase();
+
+  // Skip intro/context sections that aren't actionable
+  if (
+    headerLower.includes('background') ||
+    headerLower.includes('context') ||
+    headerLower.includes('overview') ||
+    headerLower.includes('introduction') ||
+    headerLower.includes('summary') ||
+    /^the\s+(core\s+)?challenge$/i.test(header) ||  // "The Core Challenge" is context
+    /^(why|what|how)\s+/i.test(header)  // "Why this matters", "What we know"
+  ) {
+    return null; // Don't create a card for this
+  }
 
   // Questions - sections asking for input/decisions
   if (
@@ -339,7 +353,6 @@ function detectSectionType(header: string, body: string): SubsectionType {
     headerLower.includes('approach') ||
     headerLower.includes('proposal') ||
     headerLower.includes('design') ||
-    headerLower.includes('interface') ||
     headerLower.includes('recommendation') ||
     /^(my\s+)?proposed/i.test(header) ||
     /^option\s*\d/i.test(header)
@@ -352,20 +365,11 @@ function detectSectionType(header: string, body: string): SubsectionType {
     return 'alternative';
   }
 
-  // Challenges/problems/issues
-  if (
-    headerLower.includes('challenge') ||
-    headerLower.includes('problem') ||
-    headerLower.includes('issue') ||
-    headerLower.includes('core')
-  ) {
-    return 'crux';
-  }
-
-  // Implementation details
+  // Implementation/technical sections - skip unless they have numbered items
   if (
     headerLower.includes('implementation') ||
-    headerLower.includes('technical')
+    headerLower.includes('technical') ||
+    headerLower.includes('interface')  // "Interface Design Options" → will have numbered items
   ) {
     return 'section';
   }
@@ -417,6 +421,9 @@ function parseGenericOutput(content: string): ParsedResponse {
     for (const section of sections) {
       const sectionType = detectSectionType(section.header, section.body);
 
+      // Skip sections that shouldn't become cards (intro/context)
+      if (sectionType === null) continue;
+
       // Extract numbered items within this section
       const items = extractNumberedItemsFromBody(section.body);
 
@@ -442,17 +449,24 @@ function parseGenericOutput(content: string): ParsedResponse {
             }],
           });
         }
-      } else if (section.body.length > 80) {
-        // No items or just one: create a single card for the section
-        // Skip if section is too short
+      } else if (items.length === 1 && sectionType !== 'section') {
+        // Single numbered item in an actionable section (question/proposal)
+        const item = items[0];
         subsections.push({
           id: generateId(),
           type: sectionType,
-          title: section.header,
-          content: section.body.slice(0, 800),
+          title: item.title,
+          content: item.description.slice(0, 400),
           collapsed: false,
+          tags: [{
+            label: section.header.slice(0, 25),
+            color: sectionType === 'question' ? 'orange' :
+                   sectionType === 'proposal' ? 'blue' : 'gray',
+          }],
         });
       }
+      // Don't create cards for sections without numbered items
+      // They're usually just context/prose that the user can read in raw view
     }
 
     if (subsections.length > 0) {
