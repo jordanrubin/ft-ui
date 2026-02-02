@@ -7,6 +7,7 @@ interface SkillsPaneProps {
   skills: SkillInfo[];
   selectedContent?: string; // If a subsection is selected
   onRunSkill: (skillName: string, content?: string) => void;
+  onClearSelection?: () => void;
   onClose: () => void;
   isRunning: boolean;
 }
@@ -16,6 +17,7 @@ export default function SkillsPane({
   skills,
   selectedContent,
   onRunSkill,
+  onClearSelection,
   onClose,
   isRunning,
 }: SkillsPaneProps) {
@@ -48,18 +50,37 @@ export default function SkillsPane({
         </button>
       </div>
 
-      {/* Target indicator - minimal */}
+      {/* Target indicator - clickable to clear selection */}
       <div style={{
         padding: '6px 12px',
         borderBottom: '1px solid #30363d',
         background: '#0d1117',
         fontSize: '11px',
         color: '#8b949e',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
       }}>
         {selectedContent ? (
-          <span style={{ color: '#58a6ff' }}>selection</span>
+          <>
+            <span style={{ color: '#58a6ff' }}>on selection</span>
+            <button
+              onClick={onClearSelection}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#666',
+                cursor: 'pointer',
+                fontSize: '10px',
+                padding: '2px 6px',
+              }}
+              title="Clear selection, run on full node"
+            >
+              × clear
+            </button>
+          </>
         ) : (
-          <span>{node.operation || 'root'}</span>
+          <span>on {node.operation || 'root'}</span>
         )}
       </div>
 

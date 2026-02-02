@@ -533,6 +533,7 @@ export default function App() {
                   }
                 }
               }}
+              onClearSelection={() => setSelectedSubsectionContent(undefined)}
               onClose={() => {
                 setSelectedNode(null);
                 setSelectedSubsectionContent(undefined);
