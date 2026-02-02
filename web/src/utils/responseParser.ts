@@ -390,6 +390,17 @@ function parseMarkdownSections(content: string): Array<{ header: string; level: 
 }
 
 /**
+ * Check if a header is a numbered item (e.g., "1. **Title**" or "1. Title")
+ */
+function isNumberedHeader(header: string): { num: number; title: string } | null {
+  const match = header.match(/^(\d+)\.\s*\*?\*?(.+?)\*?\*?\s*$/);
+  if (match) {
+    return { num: parseInt(match[1], 10), title: match[2].trim() };
+  }
+  return null;
+}
+
+/**
  * Detect the semantic type of a section based on its header and content
  * Returns null for sections that shouldn't become cards (intro/context sections)
  */
@@ -489,13 +500,41 @@ function parseGenericOutput(content: string): ParsedResponse {
   // First, parse markdown sections
   const sections = parseMarkdownSections(content);
 
+  // Track parent section for labeling numbered subsections
+  let currentParentHeader: string | null = null;
+
   // If we have multiple ## sections, use section-based parsing
   if (sections.length >= 2) {
     for (const section of sections) {
+      // Check if this section header IS a numbered item (e.g., "### 1. **Title**")
+      const numberedHeader = isNumberedHeader(section.header);
+
+      if (numberedHeader && section.level === 3) {
+        // This is a numbered subsection like "### 1. **Progressive Disclosure**"
+        // Create a card for it directly
+        subsections.push({
+          id: generateId(),
+          type: 'proposal',  // Numbered items are typically proposals/suggestions
+          title: numberedHeader.title,
+          content: section.body.slice(0, 600),
+          collapsed: false,
+          tags: currentParentHeader ? [{
+            label: currentParentHeader.slice(0, 25),
+            color: 'blue',
+          }] : undefined,
+        });
+        continue;
+      }
+
       const sectionType = detectSectionType(section.header, section.body);
 
       // Skip sections that shouldn't become cards (intro/context)
       if (sectionType === null) continue;
+
+      // Track level-2 headers as parent context for subsections
+      if (section.level === 2) {
+        currentParentHeader = section.header;
+      }
 
       // Extract numbered items within this section
       const items = extractNumberedItemsFromBody(section.body);
