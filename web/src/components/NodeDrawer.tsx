@@ -33,7 +33,7 @@ export default function NodeDrawer({
   skills,
   onClose,
   onSkillRun,
-  onSkillRunOnSelection,
+  onSkillRunOnSelection: _onSkillRunOnSelection,
   onChatSubmit,
   onNodeEdit,
   onNodeDelete,
@@ -455,11 +455,8 @@ export default function NodeDrawer({
                 {node.type === 'operation' && isStructuredResponse(node.content_full) ? (
                   <SubsectionViewer
                     node={node}
-                    skills={skills}
-                    onSkillRunOnSelection={onSkillRunOnSelection}
                     onAnswerSave={onAnswerSave}
                     onSubsectionSelect={onSubsectionSelect}
-                    isRunning={isRunning}
                   />
                 ) : (
                   <div

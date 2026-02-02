@@ -1,20 +1,74 @@
-import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics } from '../types/canvas';
+import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus } from '../types/canvas';
 
 const API_BASE = '/api';
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(error.detail || 'Request failed');
+// Retry configuration
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1000; // 1 second
+const MAX_RETRY_DELAY = 8000; // 8 seconds
+
+// Errors that should trigger a retry
+function isRetryableError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    // Network errors (fetch failed)
+    return true;
   }
-  return res.json();
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    // Retry on network-related errors
+    return msg.includes('network') ||
+           msg.includes('timeout') ||
+           msg.includes('failed to fetch') ||
+           msg.includes('connection') ||
+           msg.includes('econnreset') ||
+           msg.includes('socket');
+  }
+  return false;
+}
+
+// Sleep utility
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  let lastError: Error | null = null;
+  let retryDelay = INITIAL_RETRY_DELAY;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(error.detail || 'Request failed');
+      }
+
+      return await res.json();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Only retry on retryable errors and if we have attempts left
+      if (attempt < MAX_RETRIES && isRetryableError(error)) {
+        console.warn(`Request to ${path} failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}), retrying in ${retryDelay}ms...`, error);
+        await sleep(retryDelay);
+        // Exponential backoff with jitter
+        retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY) + Math.random() * 500;
+      } else {
+        // Non-retryable error or out of retries
+        break;
+      }
+    }
+  }
+
+  // All retries exhausted
+  throw lastError || new Error('Request failed after retries');
 }
 
 // Canvas operations
@@ -85,6 +139,9 @@ export const canvasApi = {
         include_contents: includeContents,
       }),
     }),
+
+  // Status
+  getStatus: () => request<AppStatus>('/status'),
 };
 
 // Plan file operations

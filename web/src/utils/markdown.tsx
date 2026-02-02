@@ -11,7 +11,6 @@ interface MarkdownProps {
 export function Markdown({ content, style }: MarkdownProps) {
   const lines = content.split('\n');
   const elements: React.ReactNode[] = [];
-  let inList = false;
   let listItems: string[] = [];
 
   const flushList = () => {
@@ -25,7 +24,6 @@ export function Markdown({ content, style }: MarkdownProps) {
       );
       listItems = [];
     }
-    inList = false;
   };
 
   const renderInline = (text: string): React.ReactNode => {
@@ -145,7 +143,6 @@ export function Markdown({ content, style }: MarkdownProps) {
     // List items
     const listMatch = trimmed.match(/^[-*•]\s+(.+)$/);
     if (listMatch) {
-      inList = true;
       listItems.push(listMatch[1]);
       continue;
     }
@@ -154,7 +151,6 @@ export function Markdown({ content, style }: MarkdownProps) {
     const numMatch = trimmed.match(/^\d+\.\s+(.+)$/);
     if (numMatch) {
       // For now, treat as unordered
-      inList = true;
       listItems.push(numMatch[1]);
       continue;
     }

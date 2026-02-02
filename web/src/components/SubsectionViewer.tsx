@@ -1,24 +1,18 @@
 import { useState, useMemo } from 'react';
-import type { CanvasNode, SkillInfo, ParsedResponse } from '../types';
+import type { CanvasNode, ParsedResponse } from '../types';
 import { parseSkillResponse } from '../utils/responseParser';
 import SubsectionCard from './SubsectionCard';
 
 interface SubsectionViewerProps {
   node: CanvasNode;
-  skills: SkillInfo[];
-  onSkillRunOnSelection: (skillName: string, content: string) => void;
   onAnswerSave?: (nodeId: string, answers: Record<string, string>) => void;
   onSubsectionSelect?: (content: string | undefined) => void;
-  isRunning: boolean;
 }
 
 export default function SubsectionViewer({
   node,
-  skills,
-  onSkillRunOnSelection,
   onAnswerSave,
   onSubsectionSelect,
-  isRunning,
 }: SubsectionViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -73,10 +67,6 @@ export default function SubsectionViewer({
         onSubsectionSelect(undefined);
       }
     }
-  };
-
-  const handleSkillRun = (skillName: string, content: string) => {
-    onSkillRunOnSelection(skillName, content);
   };
 
   // Get section label based on content type
@@ -199,49 +189,6 @@ export default function SubsectionViewer({
           }}>
             {parsedResponse.mainContent.content}
           </div>
-
-          {/* Skill buttons when selected */}
-          {selectedId === parsedResponse.mainContent.id && skills.length > 0 && (
-            <div style={{
-              marginTop: '16px',
-              paddingTop: '16px',
-              borderTop: '1px solid #3f3f46',
-            }}>
-              <div style={{
-                fontSize: '12px',
-                color: '#a1a1aa',
-                marginBottom: '10px',
-                fontWeight: 500,
-              }}>
-                Run skill on this:
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {skills.map((skill) => (
-                  <button
-                    key={skill.name}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSkillRun(skill.name, `${parsedResponse.mainContent!.title}\n\n${parsedResponse.mainContent!.content}`);
-                    }}
-                    disabled={isRunning}
-                    style={{
-                      padding: '8px 14px',
-                      background: '#3f3f46',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: '6px',
-                      fontSize: '13px',
-                      fontWeight: 500,
-                      cursor: isRunning ? 'not-allowed' : 'pointer',
-                      opacity: isRunning ? 0.6 : 1,
-                    }}
-                  >
-                    {skill.display_name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -283,9 +230,7 @@ export default function SubsectionViewer({
             subsection={subsection}
             isSelected={selectedId === subsection.id}
             onSelect={handleSelect}
-            onSkillRun={handleSkillRun}
             onAnswer={handleAnswer}
-            skills={skills}
           />
         ))}
       </div>
