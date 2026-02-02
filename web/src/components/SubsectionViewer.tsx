@@ -1,7 +1,38 @@
 import { useState, useMemo } from 'react';
-import type { CanvasNode, ParsedResponse } from '../types';
+import type { CanvasNode, ParsedResponse, Subsection, SubsectionType, ImportanceLevel } from '../types';
 import { parseSkillResponse } from '../utils/responseParser';
+import { parseCanvasResponse, type CanvasArtifact, type CanvasBlock, type CanvasItem, type Importance } from '../types/canvasArtifact';
 import SubsectionCard from './SubsectionCard';
+
+// Map CanvasArtifact block kinds to SubsectionType
+function mapBlockKindToType(kind: string): SubsectionType {
+  const mapping: Record<string, SubsectionType> = {
+    cruxes: 'crux',
+    crux: 'crux',
+    antitheses: 'antithesis',
+    antithesis: 'antithesis',
+    alternatives: 'alternative',
+    alternative: 'alternative',
+    failure_modes: 'failure_mode',
+    failure_mode: 'failure_mode',
+    questions: 'question',
+    question: 'question',
+    assumptions: 'assumption',
+    assumption: 'assumption',
+    dimensions: 'dimension',
+    dimension: 'dimension',
+    proposals: 'proposal',
+    proposal: 'proposal',
+  };
+  return mapping[kind.toLowerCase()] || 'generic';
+}
+
+// Map CanvasArtifact importance to SubsectionType importance
+function mapImportance(importance?: Importance): ImportanceLevel | undefined {
+  if (!importance) return undefined;
+  if (importance === 'critical') return 'high';
+  return importance as ImportanceLevel;
+}
 
 interface SubsectionViewerProps {
   node: CanvasNode;
@@ -28,9 +59,37 @@ export default function SubsectionViewer({
     }
   });
 
-  // Parse the response content
-  const parsedResponse = useMemo((): ParsedResponse => {
-    return parseSkillResponse(node.content_full, node.operation);
+  // Try to parse as CanvasArtifact first, then fall back to legacy parser
+  const { artifact, parsedResponse } = useMemo((): { artifact: CanvasArtifact | null; parsedResponse: ParsedResponse } => {
+    const { artifact, raw } = parseCanvasResponse(node.content_full);
+
+    if (artifact) {
+      // Convert CanvasArtifact to ParsedResponse format for backward compatibility
+      const subsections: Subsection[] = artifact.blocks.flatMap((block: CanvasBlock) =>
+        block.items.map((item: CanvasItem, idx: number): Subsection => ({
+          id: item.id || `${block.kind}_${idx}`,
+          type: mapBlockKindToType(block.kind),
+          title: item.title || item.text.slice(0, 60) + (item.text.length > 60 ? '...' : ''),
+          content: item.text,
+          importance: mapImportance(item.importance),
+          tags: item.tags?.map(t => ({ label: t, color: 'gray' as const })),
+        }))
+      );
+
+      return {
+        artifact,
+        parsedResponse: {
+          subsections,
+          rawContent: raw,
+        },
+      };
+    }
+
+    // Fall back to legacy parsing
+    return {
+      artifact: null,
+      parsedResponse: parseSkillResponse(node.content_full, node.operation),
+    };
   }, [node.content_full, node.operation]);
 
   // Handle answer updates - save to localStorage
@@ -69,28 +128,33 @@ export default function SubsectionViewer({
     }
   };
 
-  // Get section label based on content type - only for skill-specific outputs
-  const getSectionLabel = () => {
-    // Only show labels for skill-specific parsers, not generic content
+  // Get section labels - prefer artifact block titles, fall back to type-based labels
+  const getSectionLabels = (): string[] => {
+    // If we have a CanvasArtifact, use block titles
+    if (artifact) {
+      return artifact.blocks.map(b => b.title.toUpperCase());
+    }
+
+    // Fall back to legacy type-based label
     const skill = node.operation?.toLowerCase().replace('@', '');
-    if (!skill || skill === 'chat') return null;
+    if (!skill || skill === 'chat') return [];
 
     const firstType = parsedResponse.subsections[0]?.type;
     switch (firstType) {
       case 'antithesis':
-        return 'ANTITHESES';
+        return ['ANTITHESES'];
       case 'crux':
-        return 'CRUXES';
+        return ['CRUXES'];
       case 'assumption':
-        return 'ASSUMPTIONS';
+        return ['ASSUMPTIONS'];
       case 'alternative':
-        return 'ALTERNATIVES';
+        return ['ALTERNATIVES'];
       case 'failure_mode':
-        return 'FAILURE MODES';
+        return ['FAILURE MODES'];
       case 'dimension':
-        return 'DIMENSIONS';
+        return ['DIMENSIONS'];
       default:
-        return null; // Don't show a label for generic/section/proposal/question
+        return [];
     }
   };
 
@@ -119,7 +183,7 @@ export default function SubsectionViewer({
     );
   }
 
-  const sectionLabel = getSectionLabel();
+  const sectionLabels = getSectionLabels();
 
   return (
     <div style={{
@@ -127,8 +191,35 @@ export default function SubsectionViewer({
       borderRadius: '12px',
       padding: '20px',
     }}>
-      {/* Main content (thesis) */}
-      {parsedResponse.mainContent && (
+      {/* Artifact summary - shown at top for structured responses */}
+      {artifact?.summary && (
+        <div style={{
+          background: '#27272a',
+          borderRadius: '12px',
+          padding: '16px 20px',
+          marginBottom: '16px',
+        }}>
+          <div style={{
+            color: '#a1a1aa',
+            fontSize: '11px',
+            fontWeight: 600,
+            marginBottom: '8px',
+            letterSpacing: '0.5px',
+          }}>
+            SUMMARY
+          </div>
+          <div style={{
+            color: '#e5e7eb',
+            fontSize: '14px',
+            lineHeight: 1.6,
+          }}>
+            {artifact.summary}
+          </div>
+        </div>
+      )}
+
+      {/* Main content (thesis) - legacy format */}
+      {!artifact && parsedResponse.mainContent && (
         <div
           style={{
             background: '#27272a',
@@ -175,7 +266,7 @@ export default function SubsectionViewer({
       )}
 
       {/* Subsections label */}
-      {sectionLabel && parsedResponse.subsections.length > 0 && (
+      {sectionLabels.length > 0 && parsedResponse.subsections.length > 0 && (
         <div style={{
           color: '#6b7280',
           fontSize: '12px',
@@ -183,7 +274,7 @@ export default function SubsectionViewer({
           marginBottom: '12px',
           letterSpacing: '0.5px',
         }}>
-          {sectionLabel}
+          {sectionLabels[0]}
         </div>
       )}
 
@@ -199,6 +290,74 @@ export default function SubsectionViewer({
           />
         ))}
       </div>
+
+      {/* Suggested moves from artifact */}
+      {artifact?.suggested_moves && artifact.suggested_moves.length > 0 && (
+        <div style={{
+          marginTop: '16px',
+          paddingTop: '16px',
+          borderTop: '1px solid #e5e7eb',
+        }}>
+          <div style={{
+            color: '#6b7280',
+            fontSize: '12px',
+            fontWeight: 600,
+            marginBottom: '10px',
+            letterSpacing: '0.5px',
+          }}>
+            SUGGESTED NEXT
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {artifact.suggested_moves.map((move, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: '#e0e7ff',
+                  color: '#3730a3',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  padding: '6px 12px',
+                  borderRadius: '16px',
+                  cursor: 'default',
+                }}
+                title={move.reason}
+              >
+                {move.skill}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Warnings from artifact */}
+      {artifact?.warnings && artifact.warnings.length > 0 && (
+        <div style={{
+          marginTop: '16px',
+          padding: '12px 16px',
+          background: '#fef3c7',
+          borderRadius: '8px',
+          border: '1px solid #fcd34d',
+        }}>
+          <div style={{
+            color: '#92400e',
+            fontSize: '12px',
+            fontWeight: 600,
+            marginBottom: '6px',
+          }}>
+            CAVEATS
+          </div>
+          <ul style={{
+            margin: 0,
+            paddingLeft: '20px',
+            color: '#78350f',
+            fontSize: '13px',
+          }}>
+            {artifact.warnings.map((w, idx) => (
+              <li key={idx}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Toggle raw view */}
       <div style={{

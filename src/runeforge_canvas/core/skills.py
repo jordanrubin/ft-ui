@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from .canvas_format import build_canvas_suffix, should_use_canvas_format
+
 
 @dataclass
 class Skill:
@@ -26,13 +28,27 @@ class Skill:
         return f"@{self.name}"
 
     def build_prompt(self, context: str, params: Optional[dict] = None) -> str:
-        """build the full prompt for this skill with context and optional params."""
-        param_section = ""
+        """build the full prompt for this skill with context and optional params.
+
+        If params includes render=canvas, appends structured output instructions.
+        """
+        # separate render params from skill params
+        render_params = {}
+        skill_params = {}
         if params:
-            param_lines = [f"- {k}: {v}" for k, v in params.items()]
+            for k, v in params.items():
+                if k in ("render", "verbosity", "focus"):
+                    render_params[k] = v
+                else:
+                    skill_params[k] = v
+
+        param_section = ""
+        if skill_params:
+            param_lines = [f"- {k}: {v}" for k, v in skill_params.items()]
             param_section = f"\n<parameters>\n" + "\n".join(param_lines) + "\n</parameters>\n"
 
-        return f"""<skill name="{self.name}">
+        # base prompt
+        base = f"""<skill name="{self.name}">
 {self.body}
 </skill>
 {param_section}
@@ -41,6 +57,14 @@ class Skill:
 </context>
 
 apply the {self.name} skill above to the context. follow the skill's process exactly."""
+
+        # append canvas format instructions if render=canvas
+        if should_use_canvas_format(render_params):
+            verbosity = int(render_params.get("verbosity", 1))
+            focus = render_params.get("focus")
+            base += build_canvas_suffix(verbosity=verbosity, focus=focus)
+
+        return base
 
 
 @dataclass
