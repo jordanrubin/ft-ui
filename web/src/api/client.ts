@@ -215,25 +215,41 @@ export const linkApi = {
 };
 
 // Skill operations
+// Default to canvas render mode for structured output
+const DEFAULT_SKILL_PARAMS = { render: 'canvas', verbosity: 1 };
+
 export const skillApi = {
   list: () => request<SkillInfo[]>('/skills'),
 
   run: (skillName: string, nodeId: string, params: Record<string, unknown> = {}) =>
     request<CanvasNode>('/skill/run', {
       method: 'POST',
-      body: JSON.stringify({ skill_name: skillName, node_id: nodeId, params }),
+      body: JSON.stringify({
+        skill_name: skillName,
+        node_id: nodeId,
+        params: { ...DEFAULT_SKILL_PARAMS, ...params },
+      }),
     }),
 
   runOnSelection: (skillName: string, nodeId: string, selectedContent: string, params: Record<string, unknown> = {}) =>
     request<CanvasNode>('/skill/run-on-selection', {
       method: 'POST',
-      body: JSON.stringify({ skill_name: skillName, node_id: nodeId, selected_content: selectedContent, params }),
+      body: JSON.stringify({
+        skill_name: skillName,
+        node_id: nodeId,
+        selected_content: selectedContent,
+        params: { ...DEFAULT_SKILL_PARAMS, ...params },
+      }),
     }),
 
   runOnMultiple: (skillName: string, nodeIds: string[], params: Record<string, unknown> = {}) =>
     request<CanvasNode>('/skill/run-on-multiple', {
       method: 'POST',
-      body: JSON.stringify({ skill_name: skillName, node_ids: nodeIds, params }),
+      body: JSON.stringify({
+        skill_name: skillName,
+        node_ids: nodeIds,
+        params: { ...DEFAULT_SKILL_PARAMS, ...params },
+      }),
     }),
 
   runChain: (chainText: string, nodeId: string) =>
