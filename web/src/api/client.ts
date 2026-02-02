@@ -227,7 +227,8 @@ export const linkApi = {
 
 // Skill operations
 // Default to canvas render mode for structured output
-const DEFAULT_SKILL_PARAMS = { render: 'canvas', verbosity: 1 };
+// verbosity 0 = minimal (max 4 items, 1 sentence each)
+const DEFAULT_SKILL_PARAMS = { render: 'canvas', verbosity: 0 };
 
 export const skillApi = {
   list: () => request<SkillInfo[]>('/skills'),
