@@ -20,8 +20,26 @@ export default function App() {
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [linkedNodes, setLinkedNodes] = useState<CanvasNode[]>([]);
   const [backlinks, setBacklinks] = useState<CanvasNode[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
+  const [runningStatus, setRunningStatus] = useState<{
+    active: boolean;
+    stage: 'sending' | 'waiting' | 'processing' | 'updating';
+    operation?: string;
+    startTime?: number;
+  }>({ active: false, stage: 'sending' });
   const [error, setError] = useState<string | null>(null);
+
+  // Helper for cleaner status updates
+  const isRunning = runningStatus.active;
+  const setIsRunning = (running: boolean) => {
+    if (running) {
+      setRunningStatus({ active: true, stage: 'sending', startTime: Date.now() });
+    } else {
+      setRunningStatus({ active: false, stage: 'sending' });
+    }
+  };
+  const setRunningStage = (stage: 'sending' | 'waiting' | 'processing' | 'updating', operation?: string) => {
+    setRunningStatus(prev => ({ ...prev, stage, operation: operation || prev.operation }));
+  };
   const [showSidebar, setShowSidebar] = useState(true);
   const [planFiles, setPlanFiles] = useState<PlanFileInfo[]>([]);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
@@ -131,11 +149,14 @@ export default function App() {
     async (skillName: string) => {
       if (!selectedNode) return;
       setSelectedNode(null); // close drawer
-      setIsRunning(true);
+      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
       setError(null);
       try {
+        setRunningStage('waiting', skillName);
         const newNode = await skillApi.run(skillName, selectedNode.id);
+        setRunningStage('processing');
         await refreshCanvas();
+        setRunningStage('updating');
         // focus the new node
         if (newNode?.id) {
           setSelectedNode(newNode);
@@ -153,11 +174,14 @@ export default function App() {
     async (skillName: string, selectedContent: string) => {
       if (!selectedNode) return;
       setSelectedNode(null); // close drawer
-      setIsRunning(true);
+      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
       setError(null);
       try {
+        setRunningStage('waiting', skillName);
         const newNode = await skillApi.runOnSelection(skillName, selectedNode.id, selectedContent);
+        setRunningStage('processing');
         await refreshCanvas();
+        setRunningStage('updating');
         if (newNode?.id) {
           setSelectedNode(newNode);
         }
@@ -173,13 +197,16 @@ export default function App() {
   const handleSkillRunOnMultiple = useCallback(
     async (skillName: string) => {
       if (selectedNodeIds.size === 0) return;
-      setIsRunning(true);
+      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
       setError(null);
       try {
+        setRunningStage('waiting', skillName);
         const nodeIds = [...selectedNodeIds];
         const newNode = await skillApi.runOnMultiple(skillName, nodeIds);
+        setRunningStage('processing');
         setSelectedNodeIds(new Set()); // clear selection
         await refreshCanvas();
+        setRunningStage('updating');
         if (newNode?.id) {
           setSelectedNode(newNode);
         }
@@ -200,11 +227,14 @@ export default function App() {
     async (prompt: string) => {
       if (!selectedNode) return;
       setSelectedNode(null); // close drawer
-      setIsRunning(true);
+      setRunningStatus({ active: true, stage: 'sending', operation: 'chat', startTime: Date.now() });
       setError(null);
       try {
+        setRunningStage('waiting', 'chat');
         const newNode = await skillApi.runChat(prompt, selectedNode.id);
+        setRunningStage('processing');
         await refreshCanvas();
+        setRunningStage('updating');
         if (newNode?.id) {
           setSelectedNode(newNode);
         }
@@ -270,7 +300,7 @@ export default function App() {
   }, [selectedNode, refreshCanvas]);
 
   const handleSynthesizePlan = useCallback(async () => {
-    setIsRunning(true);
+    setRunningStatus({ active: true, stage: 'sending', operation: 'synthesize', startTime: Date.now() });
     setError(null);
     try {
       // Gather all answers from localStorage
@@ -288,8 +318,11 @@ export default function App() {
         }
       }
 
+      setRunningStage('waiting', 'synthesize');
       const planNode = await planApi.synthesize(undefined, true, allAnswers);
+      setRunningStage('processing');
       await refreshCanvas();
+      setRunningStage('updating');
       setSelectedNode(planNode);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Plan synthesis failed');
@@ -862,20 +895,74 @@ export default function App() {
                 borderRadius: '12px',
                 border: '1px solid #30363d',
                 textAlign: 'center',
+                minWidth: '280px',
               }}
             >
+              {/* Spinner */}
               <div
                 style={{
                   width: '40px',
                   height: '40px',
                   border: '3px solid #30363d',
-                  borderTopColor: '#58a6ff',
+                  borderTopColor: runningStatus.stage === 'waiting' ? '#58a6ff'
+                    : runningStatus.stage === 'processing' ? '#3fb950'
+                    : runningStatus.stage === 'updating' ? '#a371f7'
+                    : '#58a6ff',
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite',
                   margin: '0 auto 16px',
                 }}
               />
-              <div style={{ color: '#e0e0e0', fontSize: '16px' }}>Running operation...</div>
+
+              {/* Operation name */}
+              {runningStatus.operation && (
+                <div style={{
+                  color: '#58a6ff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  marginBottom: '8px',
+                  fontFamily: 'monospace',
+                }}>
+                  {runningStatus.operation}
+                </div>
+              )}
+
+              {/* Stage message */}
+              <div style={{ color: '#e0e0e0', fontSize: '15px' }}>
+                {runningStatus.stage === 'sending' && 'Sending request...'}
+                {runningStatus.stage === 'waiting' && 'Waiting for response...'}
+                {runningStatus.stage === 'processing' && 'Processing result...'}
+                {runningStatus.stage === 'updating' && 'Updating canvas...'}
+              </div>
+
+              {/* Stage indicator dots */}
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                gap: '8px',
+                marginTop: '16px'
+              }}>
+                {['sending', 'waiting', 'processing', 'updating'].map((stage, i) => {
+                  const stages = ['sending', 'waiting', 'processing', 'updating'];
+                  const currentIndex = stages.indexOf(runningStatus.stage);
+                  const isComplete = i < currentIndex;
+                  const isCurrent = stage === runningStatus.stage;
+                  return (
+                    <div
+                      key={stage}
+                      style={{
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        background: isComplete ? '#3fb950'
+                          : isCurrent ? '#58a6ff'
+                          : '#30363d',
+                        transition: 'background 0.3s ease',
+                      }}
+                    />
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
