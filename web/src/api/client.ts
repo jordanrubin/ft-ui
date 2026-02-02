@@ -143,6 +143,14 @@ export const canvasApi = {
   // Refresh root from source directory
   refreshRoot: () => request<Canvas>('/canvas/refresh-root', { method: 'POST' }),
 
+  // Rename canvas
+  rename: (newName: string) =>
+    request<Canvas>(`/canvas/rename?new_name=${encodeURIComponent(newName)}`, { method: 'POST' }),
+
+  // Delete canvas
+  delete: (canvasPath: string) =>
+    request<{ deleted: string }>(`/canvas/${encodeURIComponent(canvasPath)}`, { method: 'DELETE' }),
+
   // Status
   getStatus: () => request<AppStatus>('/status'),
 };

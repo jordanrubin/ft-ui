@@ -601,8 +601,7 @@ async def create_canvas_from_directory(req: CanvasFromDirectory):
     state.canvas.source_directory = str(dir_path)  # track source for refresh
     root = CanvasNode.create_root(content)
     state.canvas.add_node(root)
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
-    state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+    state.canvas_path = _get_unique_canvas_path(name)
     state.mark_dirty()
     state.save_session()
     return _canvas_response()
@@ -672,6 +671,23 @@ async def load_canvas(path: str):
     return _canvas_response()
 
 
+def _get_unique_canvas_path(name: str) -> Path:
+    """get a unique path for a canvas, appending number if name exists."""
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
+    base_path = get_canvas_dir() / f"{safe_name}.json"
+
+    if not base_path.exists():
+        return base_path
+
+    # Find unique name with suffix
+    counter = 2
+    while True:
+        path = get_canvas_dir() / f"{safe_name}-{counter}.json"
+        if not path.exists():
+            return path
+        counter += 1
+
+
 @app.post("/canvas/save")
 async def save_canvas(path: Optional[str] = None):
     """save canvas to file."""
@@ -686,6 +702,44 @@ async def save_canvas(path: Optional[str] = None):
     state.mark_clean()
     state.save_session()
     return {"saved": str(p), "is_dirty": False}
+
+
+@app.post("/canvas/rename")
+async def rename_canvas(new_name: str):
+    """rename current canvas."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    old_path = state.canvas_path
+    state.canvas.name = new_name
+    new_path = _get_unique_canvas_path(new_name)
+    state.canvas.save(new_path)
+    state.canvas_path = new_path
+
+    # Delete old file if it exists and is different
+    if old_path and old_path.exists() and old_path != new_path:
+        old_path.unlink()
+
+    state.mark_clean()
+    state.save_session()
+    return _canvas_response()
+
+
+@app.delete("/canvas/{canvas_path:path}")
+async def delete_canvas(canvas_path: str):
+    """delete a saved canvas file."""
+    p = Path(canvas_path).expanduser()
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"canvas not found: {canvas_path}")
+
+    # If deleting current canvas, clear state
+    if state.canvas_path and state.canvas_path == p:
+        state.canvas = Canvas(name="untitled")
+        state.canvas_path = None
+        state.mark_clean()
+
+    p.unlink()
+    return {"deleted": str(p)}
 
 
 @app.post("/node", response_model=NodeResponse)

@@ -397,6 +397,32 @@ export default function App() {
     }
   }, []);
 
+  const handleRenameCanvas = useCallback(async () => {
+    if (!canvas) return;
+    const newName = prompt('Enter new name:', canvas.name);
+    if (!newName || newName === canvas.name) return;
+    try {
+      const updated = await canvasApi.rename(newName);
+      setCanvas(updated);
+      setCanvasList(await canvasApi.list());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rename failed');
+    }
+  }, [canvas]);
+
+  const handleDeleteCanvas = useCallback(async (path: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    try {
+      await canvasApi.delete(path);
+      setCanvasList(await canvasApi.list());
+      // If we deleted the current canvas, it will have been cleared on backend
+      const updated = await canvasApi.get();
+      setCanvas(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  }, []);
+
   const handleSaveCanvas = useCallback(async () => {
     if (!canvas) return;
     setIsSaving(true);
@@ -771,24 +797,53 @@ export default function App() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 {canvasList.map((item) => (
-                  <button
+                  <div
                     key={item.path}
-                    onClick={() => handleLoadCanvas(item.path)}
                     style={{
-                      padding: '10px',
-                      background: canvas?.name === item.name ? '#21262d' : 'transparent',
-                      border: canvas?.name === item.name ? '1px solid #30363d' : '1px solid transparent',
-                      borderRadius: '6px',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                      textAlign: 'left',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
                     }}
                   >
-                    <div style={{ fontWeight: 500, marginBottom: '2px' }}>{item.name}</div>
-                    <div style={{ fontSize: '11px', color: '#666' }}>
-                      {item.node_count} nodes
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => handleLoadCanvas(item.path)}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        background: canvas?.name === item.name ? '#21262d' : 'transparent',
+                        border: canvas?.name === item.name ? '1px solid #30363d' : '1px solid transparent',
+                        borderRadius: '6px',
+                        color: '#c9d1d9',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div style={{ fontWeight: 500, marginBottom: '2px' }}>{item.name}</div>
+                      <div style={{ fontSize: '11px', color: '#666' }}>
+                        {item.node_count} nodes
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteCanvas(item.path, item.name);
+                      }}
+                      title="Delete canvas"
+                      style={{
+                        padding: '8px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#666',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        borderRadius: '4px',
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.color = '#f85149'}
+                      onMouseOut={(e) => e.currentTarget.style.color = '#666'}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -798,7 +853,23 @@ export default function App() {
           {canvas && (
             <div style={{ padding: '12px', borderTop: '1px solid #30363d', fontSize: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <strong style={{ color: '#c9d1d9' }}>{canvas.name}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <strong style={{ color: '#c9d1d9' }}>{canvas.name}</strong>
+                  <button
+                    onClick={handleRenameCanvas}
+                    title="Rename canvas"
+                    style={{
+                      padding: '2px 6px',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#666',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                    }}
+                  >
+                    ✎
+                  </button>
+                </div>
                 {canvas.is_dirty ? (
                   <span style={{
                     padding: '2px 6px',
