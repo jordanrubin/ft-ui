@@ -25,6 +25,7 @@ export interface Canvas {
   is_dirty: boolean;
   last_saved_at: string | null;
   canvas_path: string | null;
+  source_directory: string | null;
 }
 
 export interface CanvasListItem {

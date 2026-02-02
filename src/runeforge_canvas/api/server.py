@@ -152,6 +152,7 @@ class CanvasResponse(BaseModel):
     is_dirty: bool = False
     last_saved_at: Optional[str] = None
     canvas_path: Optional[str] = None
+    source_directory: Optional[str] = None
 
     @classmethod
     def from_canvas(cls, canvas: Canvas, is_dirty: bool = False, last_saved_at: Optional[str] = None, canvas_path: Optional[Path] = None) -> "CanvasResponse":
@@ -165,6 +166,7 @@ class CanvasResponse(BaseModel):
             is_dirty=is_dirty,
             last_saved_at=last_saved_at,
             canvas_path=str(canvas_path) if canvas_path else None,
+            source_directory=canvas.source_directory,
         )
 
 
@@ -596,6 +598,7 @@ async def create_canvas_from_directory(req: CanvasFromDirectory):
     content = "\n".join(lines)
 
     state.canvas = Canvas(name=name)
+    state.canvas.source_directory = str(dir_path)  # track source for refresh
     root = CanvasNode.create_root(content)
     state.canvas.add_node(root)
     safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
@@ -608,6 +611,48 @@ async def create_canvas_from_directory(req: CanvasFromDirectory):
 @app.get("/canvas", response_model=CanvasResponse)
 async def get_canvas():
     """get current canvas state."""
+    return _canvas_response()
+
+
+@app.post("/canvas/refresh-root", response_model=CanvasResponse)
+async def refresh_root_from_directory():
+    """refresh root node content from source directory."""
+    if not state.canvas.source_directory:
+        raise HTTPException(
+            status_code=400,
+            detail="canvas has no source directory - was not created from directory"
+        )
+
+    dir_path = Path(state.canvas.source_directory)
+    if not dir_path.exists():
+        raise HTTPException(status_code=404, detail=f"source directory not found: {dir_path}")
+
+    # regenerate content using same logic as from-directory
+    lines = [f"# {state.canvas.name}", "", "## Structure", "```"]
+    lines.append(dir_path.name + "/")
+    lines.extend(_generate_tree(dir_path, "", 0, 3))  # default max_depth
+    lines.append("```")
+
+    key_files = _get_key_files(dir_path)
+    if key_files:
+        lines.append("")
+        lines.append("## Key Files")
+        for fname, content in key_files:
+            lines.append("")
+            lines.append(f"### {fname}")
+            lines.append("```")
+            lines.append(content)
+            lines.append("```")
+
+    new_content = "\n".join(lines)
+
+    # update root node
+    if state.canvas.root_id and state.canvas.root_id in state.canvas.nodes:
+        root = state.canvas.nodes[state.canvas.root_id]
+        root.content_full = new_content
+        root.content_compressed = new_content[:state.canvas.compress_length]
+        state.mark_dirty()
+
     return _canvas_response()
 
 

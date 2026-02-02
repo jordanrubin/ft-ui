@@ -140,6 +140,9 @@ export const canvasApi = {
       }),
     }),
 
+  // Refresh root from source directory
+  refreshRoot: () => request<Canvas>('/canvas/refresh-root', { method: 'POST' }),
+
   // Status
   getStatus: () => request<AppStatus>('/status'),
 };

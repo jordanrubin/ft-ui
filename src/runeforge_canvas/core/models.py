@@ -159,6 +159,7 @@ class Canvas:
     active_path: list[str] = field(default_factory=list)  # ids from root to focus
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     compress_length: int = DEFAULT_COMPRESSION_LENGTH
+    source_directory: Optional[str] = None  # directory path if created from directory
 
     # undo/redo - not serialized
     _undo_stack: list[dict] = field(default_factory=list, repr=False)
@@ -648,7 +649,7 @@ class Canvas:
 
     def to_dict(self) -> dict:
         """serialize to dict for json (excludes undo/redo stacks)."""
-        return {
+        d = {
             "name": self.name,
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "root_id": self.root_id,
@@ -656,6 +657,9 @@ class Canvas:
             "created_at": self.created_at,
             "compress_length": self.compress_length,
         }
+        if self.source_directory:
+            d["source_directory"] = self.source_directory
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> Canvas:
@@ -666,6 +670,7 @@ class Canvas:
             active_path=d.get("active_path", []),
             created_at=d.get("created_at", datetime.now().isoformat()),
             compress_length=d.get("compress_length", DEFAULT_COMPRESSION_LENGTH),
+            source_directory=d.get("source_directory"),
         )
         for nid, nd in d.get("nodes", {}).items():
             canvas.nodes[nid] = CanvasNode.from_dict(nd)

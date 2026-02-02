@@ -388,6 +388,15 @@ export default function App() {
     }
   }, []);
 
+  const handleRefreshRoot = useCallback(async () => {
+    try {
+      const updated = await canvasApi.refreshRoot();
+      setCanvas(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed');
+    }
+  }, []);
+
   const handleSaveCanvas = useCallback(async () => {
     if (!canvas) return;
     setIsSaving(true);
@@ -844,6 +853,26 @@ export default function App() {
               >
                 {isSaving ? 'Saving...' : 'Save (Ctrl+S)'}
               </button>
+              {canvas.source_directory && (
+                <button
+                  onClick={handleRefreshRoot}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    marginTop: '8px',
+                    background: '#21262d',
+                    border: '1px solid #30363d',
+                    borderRadius: '4px',
+                    color: '#58a6ff',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                  }}
+                  title={`Refresh from ${canvas.source_directory}`}
+                >
+                  Refresh Root
+                </button>
+              )}
             </div>
           )}
             </>
