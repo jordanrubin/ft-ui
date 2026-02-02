@@ -13,6 +13,7 @@ export type SubsectionType =
   | 'metaphor'
   | 'rhyme'
   | 'synthesis'
+  | 'question'
   | 'generic';
 
 export type ImportanceLevel = 'high' | 'medium' | 'low';
@@ -90,6 +91,10 @@ export const SKILL_SECTION_PATTERNS: Record<string, { pattern: RegExp; type: Sub
     { pattern: /^##?\s*SYNTHESIS/mi, type: 'synthesis' },
     { pattern: /^##?\s*INTEGRATION/mi, type: 'synthesis' },
   ],
+  '@askuserquestions': [
+    { pattern: /^##?\s*QUESTION/mi, type: 'question' },
+    { pattern: /\*\*\d+\.\s*[^*]+\?\s*\*\*/mi, type: 'question' },
+  ],
 };
 
 // Antithesis type tags
@@ -116,5 +121,6 @@ export const SUBSECTION_COLORS: Record<SubsectionType, string> = {
   metaphor: '#e0f7fa',
   rhyme: '#fff3e0',
   synthesis: '#f1f8e9',
+  question: '#e8eaf6',
   generic: '#fafafa',
 };

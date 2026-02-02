@@ -278,6 +278,58 @@ function parseDivergeOutput(content: string): ParsedResponse {
 }
 
 /**
+ * Parse @askuserquestions output
+ * Expected format: Numbered questions with "Why this matters" explanations
+ */
+function parseAskUserQuestionsOutput(content: string): ParsedResponse {
+  const subsections: Subsection[] = [];
+
+  // Match numbered questions: "**N. Question?**" followed by "*Why this matters:* explanation"
+  const questionPattern = /\*\*(\d+)\.\s*([^*]+\?)\s*\*\*\s*(?:\n\s*\*Why this matters:\*\s*([\s\S]*?))?(?=\*\*\d+\.|$)/g;
+
+  let match;
+  while ((match = questionPattern.exec(content)) !== null) {
+    const question = match[2].trim();
+    const explanation = match[3]?.trim() || '';
+
+    subsections.push({
+      id: generateId(),
+      type: 'question',
+      title: question,
+      content: explanation,
+      importance: detectImportance(question + ' ' + explanation),
+      collapsed: false,
+    });
+  }
+
+  // Fallback: try simpler numbered pattern if no bold questions found
+  if (subsections.length === 0) {
+    const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+\?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
+
+    while ((match = numberedPattern.exec(content)) !== null) {
+      const question = match[2].trim();
+      const explanation = match[3].trim();
+
+      if (/step|identify|consider/i.test(question) && question.length < 30) continue;
+
+      subsections.push({
+        id: generateId(),
+        type: 'question',
+        title: question,
+        content: explanation,
+        importance: detectImportance(question + ' ' + explanation),
+        collapsed: false,
+      });
+    }
+  }
+
+  return {
+    subsections,
+    rawContent: content,
+  };
+}
+
+/**
  * Generic parser for unknown skill types
  * Only creates cards for clearly structured numbered items
  */
@@ -335,6 +387,8 @@ export function parseSkillResponse(
       return parseStressifyOutput(content);
     case 'diverge':
       return parseDivergeOutput(content);
+    case 'askuserquestions':
+      return parseAskUserQuestionsOutput(content);
     default:
       return parseGenericOutput(content);
   }
@@ -359,8 +413,12 @@ export function isStructuredResponse(content: string): boolean {
   const bulletMatches = content.match(/^\s*[-*•]\s+.{15,}/gm);
   const hasSubstantialBullets = bulletMatches && bulletMatches.length >= 3;
 
+  // Or has question markers (askuserquestions skill)
+  const hasQuestionMarkers = /why this matters|clarifying questions?/i.test(content);
+
   return hasNumberedItems || hasSkillMarkers || hasMultipleSections ||
-         (hasRhymeMarkers && (hasSubstantialBullets || hasMultipleSections));
+         (hasRhymeMarkers && (hasSubstantialBullets || hasMultipleSections)) ||
+         hasQuestionMarkers;
 }
 
 // Get suggested skills for a subsection based on its type
@@ -378,6 +436,7 @@ export function getSuggestedSkills(type: SubsectionType): string[] {
     metaphor: ['@antithesize', '@stressify', '@simulate'],
     rhyme: ['@antithesize', '@excavate', '@stressify'],
     synthesis: ['@antithesize', '@stressify', '@excavate'],
+    question: ['@excavate', '@diverge', '@simulate'],
     generic: ['@excavate', '@antithesize', '@stressify'],
   };
 

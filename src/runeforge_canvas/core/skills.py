@@ -154,9 +154,10 @@ class SkillLoader:
         """list all loaded skills, ordered for plan-building workflow."""
         self.load()
 
-        # plan-workflow order: excavate → diverge → stressify → simulate → backchain → antithesize → synthesize
+        # plan-workflow order: askuserquestions → excavate → diverge → stressify → simulate → backchain → antithesize → synthesize
         # then alphabetical for the rest
         priority_order = [
+            "askuserquestions",  # clarify before planning
             "excavate",      # surface assumptions first
             "diverge",       # generate alternatives
             "stressify",     # probe for failure
@@ -219,18 +220,85 @@ class SkillLoader:
         return frontmatter, body
 
 
-# default loader paths - look for sibling runeforge repo
+# default loader paths - look for sibling runeforge repo and local skills
 _project_root = Path(__file__).parent.parent.parent.parent  # ft-ui/
+_local_skills_dir = _project_root / "skills"
 _public_skills_dir = _project_root.parent / "runeforge" / "public"
 _full_skills_dir = _project_root.parent / "runeforge" / "runeforge"
 
 
-def get_default_loader(full: bool = False) -> SkillLoader:
+class CompositeSkillLoader:
+    """loads skills from multiple directories."""
+
+    def __init__(self, loaders: list[SkillLoader]):
+        self.loaders = loaders
+        self._skills: dict[str, Skill] = {}
+        self._loaded = False
+
+    def load(self) -> dict[str, Skill]:
+        """merge skills from all loaders."""
+        if self._loaded:
+            return self._skills
+
+        for loader in self.loaders:
+            self._skills.update(loader.load())
+
+        self._loaded = True
+        return self._skills
+
+    def get(self, name: str) -> Optional[Skill]:
+        """get a skill by name."""
+        self.load()
+        name = name.lstrip("@")
+        return self._skills.get(name)
+
+    def resolve_chain(self, chain: SkillChain) -> list[tuple[Skill, dict]]:
+        """resolve a skill chain."""
+        self.load()
+        resolved = []
+        for inv in chain.invocations:
+            skill = self._skills.get(inv.name)
+            if not skill:
+                raise ValueError(f"skill not found: @{inv.name}")
+            resolved.append((skill, inv.params))
+        return resolved
+
+    def list_skills(self) -> list[Skill]:
+        """list all loaded skills, ordered for plan-building workflow."""
+        self.load()
+
+        priority_order = [
+            "askuserquestions",
+            "excavate",
+            "diverge",
+            "stressify",
+            "simulate",
+            "backchain",
+            "antithesize",
+            "synthesize",
+        ]
+
+        def sort_key(skill: Skill) -> tuple[int, str]:
+            try:
+                return (priority_order.index(skill.name), skill.name)
+            except ValueError:
+                return (len(priority_order), skill.name)
+
+        return sorted(self._skills.values(), key=sort_key)
+
+
+def get_default_loader(full: bool = False) -> CompositeSkillLoader:
     """get skill loader.
 
     args:
         full: if True, use full runeforge set (38 skills).
               if False, use public set only (10 skills).
+
+    always includes local skills directory.
     """
     skills_dir = _full_skills_dir if full else _public_skills_dir
-    return SkillLoader(skills_dir)
+    loaders = [
+        SkillLoader(_local_skills_dir),  # local skills first (higher priority)
+        SkillLoader(skills_dir),          # then external runeforge skills
+    ]
+    return CompositeSkillLoader(loaders)
