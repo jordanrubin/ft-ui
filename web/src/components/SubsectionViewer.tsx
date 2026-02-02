@@ -102,22 +102,6 @@ export default function SubsectionViewer({
         borderRadius: '12px',
         padding: '20px',
       }}>
-        {/* Header */}
-        <div style={{
-          background: '#18181b',
-          borderRadius: '12px',
-          padding: '16px 20px',
-          marginBottom: '16px',
-        }}>
-          <div style={{
-            color: '#a1a1aa',
-            fontSize: '13px',
-            fontWeight: 500,
-          }}>
-            {node.operation || 'response'}
-          </div>
-        </div>
-
         {/* Content - nicely formatted */}
         <div style={{
           background: '#ffffff',
@@ -143,22 +127,6 @@ export default function SubsectionViewer({
       borderRadius: '12px',
       padding: '20px',
     }}>
-      {/* Header card */}
-      <div style={{
-        background: '#18181b',
-        borderRadius: '12px',
-        padding: '16px 20px',
-        marginBottom: '16px',
-      }}>
-        <div style={{
-          color: '#a1a1aa',
-          fontSize: '13px',
-          fontWeight: 500,
-        }}>
-          {node.operation || 'response'}
-        </div>
-      </div>
-
       {/* Main content (thesis) */}
       {parsedResponse.mainContent && (
         <div

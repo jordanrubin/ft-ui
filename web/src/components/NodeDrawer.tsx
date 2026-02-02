@@ -32,28 +32,31 @@ export default function NodeDrawer({
   parentNode,
   skills,
   onClose,
-  onSkillRun,
+  onSkillRun: _onSkillRun,
   onSkillRunOnSelection: _onSkillRunOnSelection,
   onChatSubmit,
   onNodeEdit,
   onNodeDelete,
-  onLinkCreate,
+  onLinkCreate: _onLinkCreate,
   onToggleExclude,
   onAnswerSave,
   onSubsectionSelect,
-  linkedNodes,
-  backlinks,
+  linkedNodes: _linkedNodes,
+  backlinks: _backlinks,
   isRunning,
   selectedNodeIds,
   allNodes,
   onSkillRunOnMultiple,
   onClearMultiSelection,
 }: NodeDrawerProps) {
+  // Unused props - kept for API compatibility
+  void _onSkillRun;
+  void _onLinkCreate;
+  void _linkedNodes;
+  void _backlinks;
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [chatInput, setChatInput] = useState('');
-  const [linkInput, setLinkInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'content' | 'skills' | 'links'>('content');
   const [showFullParent, setShowFullParent] = useState(false);
 
   const hasMultiSelection = selectedNodeIds.size > 0;
@@ -233,12 +236,6 @@ export default function NodeDrawer({
     }
   };
 
-  const handleAddLink = () => {
-    if (linkInput.trim()) {
-      onLinkCreate(linkInput.trim());
-      setLinkInput('');
-    }
-  };
 
   return (
     <div
@@ -318,393 +315,226 @@ export default function NodeDrawer({
         </div>
       </div>
 
-      {/* Invocation info: what was run and on what */}
-      {node.type === 'operation' && (node.invocation_prompt || node.invocation_target || parentNode) && (
+      {/* User prompt for chat operations - shown prominently */}
+      {node.type === 'operation' && node.operation === 'chat' && node.invocation_prompt && (
         <div
           style={{
             padding: '12px 16px',
-            background: '#0d1117',
+            background: '#1c1410',
             borderBottom: '1px solid #30363d',
           }}
         >
-          {/* Invocation prompt - what was asked */}
-          {node.invocation_prompt && (
-            <div style={{ marginBottom: node.invocation_target ? '12px' : 0 }}>
-              <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>
-                {node.operation === 'chat' ? 'Prompt:' : 'Skill:'}
-              </div>
-              <div
-                style={{
-                  fontSize: '13px',
-                  color: node.operation === 'chat' ? '#f0883e' : '#58a6ff',
-                  fontStyle: node.operation === 'chat' ? 'italic' : 'normal',
-                  padding: '6px 10px',
-                  background: '#161b22',
-                  borderRadius: '4px',
-                  borderLeft: `3px solid ${node.operation === 'chat' ? '#f0883e' : '#58a6ff'}`,
-                }}
-              >
-                {node.operation === 'chat' ? `"${node.invocation_prompt}"` : node.invocation_prompt}
-              </div>
-            </div>
-          )}
-
-          {/* Invocation target - what it was run on */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '4px',
-            }}
-          >
-            <span style={{ fontSize: '11px', color: '#666' }}>Run on:</span>
-            <button
-              onClick={() => setShowFullParent(!showFullParent)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#58a6ff',
-                fontSize: '11px',
-                cursor: 'pointer',
-                padding: '2px 6px',
-              }}
-            >
-              {showFullParent ? '▼ collapse' : '▶ expand'}
-            </button>
+          <div style={{ fontSize: '11px', color: '#f0883e', marginBottom: '6px', fontWeight: 600 }}>
+            YOUR QUESTION
           </div>
           <div
             style={{
-              fontSize: '13px',
-              color: '#8b949e',
-              lineHeight: '1.4',
-              maxHeight: showFullParent ? 'none' : '60px',
-              overflow: showFullParent ? 'auto' : 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: showFullParent ? 'pre-wrap' : 'normal',
+              fontSize: '14px',
+              color: '#f0883e',
+              fontStyle: 'italic',
+              lineHeight: 1.5,
             }}
           >
-            {node.invocation_target
-              ? (showFullParent ? node.invocation_target : node.invocation_target.slice(0, 100) + (node.invocation_target.length > 100 ? '...' : ''))
-              : parentNode
-                ? (showFullParent ? parentNode.content_full : parentNode.content_compressed)
-                : '(no target recorded)'}
+            "{node.invocation_prompt}"
           </div>
         </div>
       )}
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d' }}>
-        {(['content', 'skills', 'links'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            style={{
-              flex: 1,
-              padding: '12px',
-              background: activeTab === tab ? '#21262d' : 'transparent',
-              border: 'none',
-              borderBottom: activeTab === tab ? '2px solid #58a6ff' : '2px solid transparent',
-              color: activeTab === tab ? '#fff' : '#666',
-              cursor: 'pointer',
-              textTransform: 'capitalize',
-              fontSize: '14px',
-            }}
-          >
-            {tab}
-            {tab === 'links' && (linkedNodes.length + backlinks.length > 0) && (
-              <span style={{ marginLeft: '4px', color: '#9b59b6' }}>
-                ({linkedNodes.length + backlinks.length})
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
-        {activeTab === 'content' && (
+        {isEditing ? (
           <div>
-            {isEditing ? (
-              <div>
-                <textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  style={{
-                    width: '100%',
-                    minHeight: '200px',
-                    padding: '12px',
-                    background: '#0d1117',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                    color: '#e0e0e0',
-                    fontSize: '14px',
-                    lineHeight: '1.6',
-                    resize: 'vertical',
-                    fontFamily: 'inherit',
-                  }}
-                />
-                <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={handleSaveEdit}
-                    style={{
-                      padding: '8px 16px',
-                      background: '#238636',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#fff',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditing(false);
-                      setEditContent(node.content_full);
-                    }}
-                    style={{
-                      padding: '8px 16px',
-                      background: '#21262d',
-                      border: '1px solid #30363d',
-                      borderRadius: '6px',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+            <textarea
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              style={{
+                width: '100%',
+                minHeight: '200px',
+                padding: '12px',
+                background: '#0d1117',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#e0e0e0',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                fontFamily: 'inherit',
+              }}
+            />
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+              <button
+                onClick={handleSaveEdit}
+                style={{
+                  padding: '8px 16px',
+                  background: '#238636',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  cursor: 'pointer',
+                }}
+              >
+                Save
+              </button>
+              <button
+                onClick={() => {
+                  setIsEditing(false);
+                  setEditContent(node.content_full);
+                }}
+                style={{
+                  padding: '8px 16px',
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {/* Use SubsectionViewer for structured skill responses */}
+            {node.type === 'operation' && isStructuredResponse(node.content_full) ? (
+              <SubsectionViewer
+                node={node}
+                onAnswerSave={onAnswerSave}
+                onSubsectionSelect={onSubsectionSelect}
+              />
             ) : (
-              <div>
-                {/* Use SubsectionViewer for structured skill responses */}
-                {node.type === 'operation' && isStructuredResponse(node.content_full) ? (
-                  <SubsectionViewer
-                    node={node}
-                    onAnswerSave={onAnswerSave}
-                    onSubsectionSelect={onSubsectionSelect}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      padding: '16px',
-                      background: '#0d1117',
-                      borderRadius: '6px',
-                      color: '#e0e0e0',
-                      fontSize: '14px',
-                      lineHeight: '1.6',
-                      maxHeight: '300px',
-                      overflow: 'auto',
-                    }}
-                  >
-                    <Markdown content={node.content_full} />
-                  </div>
-                )}
-                <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    style={{
-                      padding: '8px 16px',
-                      background: '#21262d',
-                      border: '1px solid #30363d',
-                      borderRadius: '6px',
-                      color: '#c9d1d9',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Edit
-                  </button>
-                  {node.type !== 'root' && (
-                    <button
-                      onClick={onNodeDelete}
-                      style={{
-                        padding: '8px 16px',
-                        background: '#21262d',
-                        border: '1px solid #f85149',
-                        borderRadius: '6px',
-                        color: '#f85149',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Delete
-                    </button>
-                  )}
-                </div>
+              <div
+                style={{
+                  padding: '16px',
+                  background: '#0d1117',
+                  borderRadius: '6px',
+                  color: '#e0e0e0',
+                  fontSize: '14px',
+                  lineHeight: '1.6',
+                  maxHeight: '300px',
+                  overflow: 'auto',
+                }}
+              >
+                <Markdown content={node.content_full} />
               </div>
             )}
-
-            {/* Chat input */}
-            <form onSubmit={handleChatSubmit} style={{ marginTop: '24px' }}>
-              <label style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
-                Ask about this node
-              </label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Type a question..."
-                  disabled={isRunning}
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    background: '#0d1117',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                    color: '#e0e0e0',
-                    fontSize: '14px',
-                  }}
-                />
+            <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => setIsEditing(true)}
+                style={{
+                  padding: '8px 16px',
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                }}
+              >
+                Edit
+              </button>
+              {node.type !== 'root' && (
                 <button
-                  type="submit"
-                  disabled={isRunning || !chatInput.trim()}
+                  onClick={onNodeDelete}
                   style={{
-                    padding: '10px 16px',
-                    background: isRunning ? '#21262d' : '#238636',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    cursor: isRunning ? 'not-allowed' : 'pointer',
-                    opacity: isRunning ? 0.6 : 1,
-                  }}
-                >
-                  {isRunning ? '...' : 'Send'}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {activeTab === 'skills' && (
-          <div>
-            <p style={{ color: '#666', fontSize: '12px', marginBottom: '16px' }}>
-              Run a skill on this node to create a new child node.
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              {skills.map((skill) => (
-                <button
-                  key={skill.name}
-                  onClick={() => onSkillRun(skill.name)}
-                  disabled={isRunning}
-                  style={{
-                    padding: '12px',
+                    padding: '8px 16px',
                     background: '#21262d',
-                    border: '1px solid #30363d',
+                    border: '1px solid #f85149',
                     borderRadius: '6px',
-                    color: '#c9d1d9',
-                    cursor: isRunning ? 'not-allowed' : 'pointer',
-                    textAlign: 'left',
-                    opacity: isRunning ? 0.6 : 1,
+                    color: '#f85149',
+                    cursor: 'pointer',
                   }}
                 >
-                  <div style={{ fontWeight: 600, marginBottom: '4px' }}>{skill.display_name}</div>
-                  <div style={{ fontSize: '11px', color: '#666' }}>{skill.description}</div>
+                  Delete
                 </button>
-              ))}
+              )}
             </div>
           </div>
         )}
 
-        {activeTab === 'links' && (
-          <div>
-            {/* Outgoing links */}
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ color: '#9b59b6', margin: '0 0 12px', fontSize: '14px' }}>
-                Links from this node ({linkedNodes.length})
-              </h4>
-              {linkedNodes.length === 0 ? (
-                <p style={{ color: '#666', fontSize: '13px' }}>No outgoing links</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {linkedNodes.map((linked) => (
-                    <div
-                      key={linked.id}
-                      style={{
-                        padding: '10px',
-                        background: '#21262d',
-                        borderRadius: '6px',
-                        borderLeft: '3px solid #9b59b6',
-                      }}
-                    >
-                      <div style={{ fontSize: '11px', color: '#9b59b6', marginBottom: '4px' }}>
-                        {linked.operation || linked.type}
-                      </div>
-                      <div style={{ color: '#c9d1d9', fontSize: '13px' }}>
-                        {linked.content_compressed}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+        {/* Chat input */}
+        <form onSubmit={handleChatSubmit} style={{ marginTop: '24px' }}>
+          <label style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
+            Ask about this node
+          </label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              placeholder="Type a question..."
+              disabled={isRunning}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                background: '#0d1117',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#e0e0e0',
+                fontSize: '14px',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isRunning || !chatInput.trim()}
+              style={{
+                padding: '10px 16px',
+                background: isRunning ? '#21262d' : '#238636',
+                border: 'none',
+                borderRadius: '6px',
+                color: '#fff',
+                cursor: isRunning ? 'not-allowed' : 'pointer',
+                opacity: isRunning ? 0.6 : 1,
+              }}
+            >
+              {isRunning ? '...' : 'Send'}
+            </button>
+          </div>
+        </form>
 
-            {/* Backlinks */}
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ color: '#58a6ff', margin: '0 0 12px', fontSize: '14px' }}>
-                Links to this node ({backlinks.length})
-              </h4>
-              {backlinks.length === 0 ? (
-                <p style={{ color: '#666', fontSize: '13px' }}>No incoming links</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {backlinks.map((bl) => (
-                    <div
-                      key={bl.id}
-                      style={{
-                        padding: '10px',
-                        background: '#21262d',
-                        borderRadius: '6px',
-                        borderLeft: '3px solid #58a6ff',
-                      }}
-                    >
-                      <div style={{ fontSize: '11px', color: '#58a6ff', marginBottom: '4px' }}>
-                        {bl.operation || bl.type}
-                      </div>
-                      <div style={{ color: '#c9d1d9', fontSize: '13px' }}>
-                        {bl.content_compressed}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+        {/* Run on section - at bottom */}
+        {node.type === 'operation' && (node.invocation_target || parentNode) && (
+          <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '8px',
+              }}
+            >
+              <span style={{ fontSize: '12px', color: '#666', fontWeight: 500 }}>RUN ON</span>
+              <button
+                onClick={() => setShowFullParent(!showFullParent)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#58a6ff',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  padding: '2px 6px',
+                }}
+              >
+                {showFullParent ? '▼ collapse' : '▶ expand'}
+              </button>
             </div>
-
-            {/* Add link */}
-            <div>
-              <h4 style={{ color: '#666', margin: '0 0 8px', fontSize: '14px' }}>Add a link</h4>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  value={linkInput}
-                  onChange={(e) => setLinkInput(e.target.value)}
-                  placeholder="Target node ID..."
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    background: '#0d1117',
-                    border: '1px solid #30363d',
-                    borderRadius: '6px',
-                    color: '#e0e0e0',
-                    fontSize: '14px',
-                  }}
-                />
-                <button
-                  onClick={handleAddLink}
-                  disabled={!linkInput.trim()}
-                  style={{
-                    padding: '10px 16px',
-                    background: '#9b59b6',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: '#fff',
-                    cursor: linkInput.trim() ? 'pointer' : 'not-allowed',
-                    opacity: linkInput.trim() ? 1 : 0.6,
-                  }}
-                >
-                  Link
-                </button>
-              </div>
+            <div
+              style={{
+                fontSize: '13px',
+                color: '#8b949e',
+                lineHeight: '1.5',
+                padding: '10px 12px',
+                background: '#0d1117',
+                borderRadius: '6px',
+                maxHeight: showFullParent ? '200px' : '60px',
+                overflow: showFullParent ? 'auto' : 'hidden',
+                whiteSpace: showFullParent ? 'pre-wrap' : 'normal',
+              }}
+            >
+              {node.invocation_target
+                ? (showFullParent ? node.invocation_target : node.invocation_target.slice(0, 150) + (node.invocation_target.length > 150 ? '...' : ''))
+                : parentNode
+                  ? (showFullParent ? parentNode.content_full : parentNode.content_compressed)
+                  : '(no target recorded)'}
             </div>
           </div>
         )}

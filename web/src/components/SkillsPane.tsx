@@ -19,21 +19,20 @@ export default function SkillsPane({
   onClose,
   isRunning,
 }: SkillsPaneProps) {
-  const displayContent = selectedContent || node.content_compressed || node.content_full;
-  const truncated = displayContent.length > 150
-    ? displayContent.slice(0, 150) + '...'
-    : displayContent;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header with back button */}
+      {/* Compact header */}
       <div style={{
-        padding: '12px 16px',
+        padding: '8px 12px',
         borderBottom: '1px solid #30363d',
         display: 'flex',
         alignItems: 'center',
-        gap: '12px',
+        justifyContent: 'space-between',
       }}>
+        <div style={{ fontSize: '12px', fontWeight: 600, color: '#8b949e', textTransform: 'uppercase' }}>
+          Skills
+        </div>
         <button
           onClick={onClose}
           style={{
@@ -41,55 +40,31 @@ export default function SkillsPane({
             border: 'none',
             color: '#8b949e',
             cursor: 'pointer',
-            padding: '4px',
-            fontSize: '16px',
+            padding: '2px 6px',
+            fontSize: '14px',
           }}
         >
-          ←
+          ×
         </button>
-        <div>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#c9d1d9' }}>
-            Run Skill
-          </div>
-          <div style={{ fontSize: '11px', color: '#8b949e' }}>
-            {selectedContent ? 'on selection' : `on node: ${node.operation || 'root'}`}
-          </div>
-        </div>
       </div>
 
-      {/* Invocation preview */}
+      {/* Target indicator - minimal */}
       <div style={{
-        padding: '12px 16px',
+        padding: '6px 12px',
         borderBottom: '1px solid #30363d',
-        background: '#161b22',
+        background: '#0d1117',
+        fontSize: '11px',
+        color: '#8b949e',
       }}>
-        <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>
-          Run On
-        </div>
-        <div style={{
-          fontSize: '13px',
-          color: '#c9d1d9',
-          lineHeight: 1.5,
-          padding: '8px 10px',
-          background: '#0d1117',
-          borderRadius: '6px',
-          border: '1px solid #30363d',
-          maxHeight: '120px',
-          overflow: 'auto',
-        }}>
-          <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px' }}>
-            {selectedContent ? 'Selection:' : 'Node content:'}
-          </div>
-          {truncated}
-        </div>
+        {selectedContent ? (
+          <span style={{ color: '#58a6ff' }}>selection</span>
+        ) : (
+          <span>{node.operation || 'root'}</span>
+        )}
       </div>
 
-      {/* Skills grid */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '12px' }}>
-        <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '12px', textTransform: 'uppercase' }}>
-          Available Skills
-        </div>
-
+      {/* Skills list - single column */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '8px' }}>
         {isRunning ? (
           <div style={{
             padding: '20px',
@@ -100,40 +75,39 @@ export default function SkillsPane({
           </div>
         ) : (
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '8px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
           }}>
             {skills.map((skill) => (
               <button
                 key={skill.name}
                 onClick={() => onRunSkill(skill.name, selectedContent)}
+                title={skill.description || ''}
                 style={{
-                  padding: '12px 10px',
+                  padding: '8px 12px',
                   background: '#21262d',
                   border: '1px solid #30363d',
-                  borderRadius: '8px',
+                  borderRadius: '6px',
                   color: '#c9d1d9',
                   cursor: 'pointer',
                   textAlign: 'left',
                   transition: 'all 0.15s ease',
+                  fontSize: '13px',
+                  fontWeight: 500,
                 }}
                 onMouseOver={(e) => {
                   e.currentTarget.style.background = '#30363d';
-                  e.currentTarget.style.borderColor = '#8b949e';
+                  e.currentTarget.style.borderColor = '#58a6ff';
+                  e.currentTarget.style.color = '#58a6ff';
                 }}
                 onMouseOut={(e) => {
                   e.currentTarget.style.background = '#21262d';
                   e.currentTarget.style.borderColor = '#30363d';
+                  e.currentTarget.style.color = '#c9d1d9';
                 }}
               >
-                <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '2px' }}>
-                  @{skill.name}
-                </div>
-                <div style={{ fontSize: '11px', color: '#8b949e', lineHeight: 1.4 }}>
-                  {skill.description?.slice(0, 60) || ''}
-                  {(skill.description?.length || 0) > 60 ? '...' : ''}
-                </div>
+                @{skill.name}
               </button>
             ))}
           </div>

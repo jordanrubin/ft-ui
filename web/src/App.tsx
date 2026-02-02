@@ -462,11 +462,12 @@ export default function App() {
       {showSidebar && (
         <div
           style={{
-            width: '260px',
+            width: showSkillsPane ? '180px' : '260px',
             background: '#161b22',
             borderRight: '1px solid #30363d',
             display: 'flex',
             flexDirection: 'column',
+            transition: 'width 0.15s ease',
           }}
         >
           {/* Header */}
