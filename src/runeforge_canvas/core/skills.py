@@ -225,12 +225,80 @@ _public_skills_dir = _project_root.parent / "runeforge" / "public"
 _full_skills_dir = _project_root.parent / "runeforge" / "runeforge"
 
 
-def get_default_loader(full: bool = False) -> SkillLoader:
+def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) -> Path:
+    """resolve skills directory from argument, env var, or default.
+
+    priority:
+    1. explicit skills_dir argument
+    2. RUNEFORGE_SKILLS_DIR environment variable
+    3. RUNEFORGE_PUBLIC_SKILLS_DIR or RUNEFORGE_FULL_SKILLS_DIR env vars
+    4. default sibling directory structure
+    """
+    import os
+
+    # 1. Explicit argument takes priority
+    if skills_dir:
+        path = Path(skills_dir).expanduser()
+        if path.exists():
+            return path
+        # Try to interpret as relative path from project root
+        alt_path = _project_root / skills_dir
+        if alt_path.exists():
+            return alt_path
+        # Return the original path even if it doesn't exist
+        return path
+
+    # 2. Generic env var
+    env_path = os.environ.get("RUNEFORGE_SKILLS_DIR")
+    if env_path:
+        path = Path(env_path).expanduser()
+        if path.exists():
+            return path
+
+    # 3. Specific env vars for public/full
+    if full:
+        env_path = os.environ.get("RUNEFORGE_FULL_SKILLS_DIR")
+    else:
+        env_path = os.environ.get("RUNEFORGE_PUBLIC_SKILLS_DIR")
+
+    if env_path:
+        path = Path(env_path).expanduser()
+        if path.exists():
+            return path
+
+    # 4. Default paths
+    default_path = _full_skills_dir if full else _public_skills_dir
+
+    # Also check some common alternative locations
+    alternative_paths = [
+        Path.home() / ".runeforge" / ("runeforge" if full else "public"),
+        Path.home() / "runeforge" / ("runeforge" if full else "public"),
+        Path("/opt/runeforge") / ("runeforge" if full else "public"),
+    ]
+
+    if default_path.exists():
+        return default_path
+
+    for alt in alternative_paths:
+        if alt.exists():
+            return alt
+
+    # Return default even if it doesn't exist
+    return default_path
+
+
+def get_default_loader(skills_dir: Optional[str] = None, full: bool = False) -> SkillLoader:
     """get skill loader.
 
     args:
+        skills_dir: explicit path to skills directory (overrides env vars)
         full: if True, use full runeforge set (38 skills).
               if False, use public set only (10 skills).
+
+    environment variables:
+        RUNEFORGE_SKILLS_DIR: path to skills directory (highest priority after explicit arg)
+        RUNEFORGE_PUBLIC_SKILLS_DIR: path to public skills directory
+        RUNEFORGE_FULL_SKILLS_DIR: path to full skills directory
     """
-    skills_dir = _full_skills_dir if full else _public_skills_dir
-    return SkillLoader(skills_dir)
+    resolved_dir = _resolve_skills_dir(skills_dir, full)
+    return SkillLoader(resolved_dir)

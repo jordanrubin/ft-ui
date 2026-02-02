@@ -18,6 +18,9 @@ export interface Canvas {
   active_path: string[];
   can_undo: boolean;
   can_redo: boolean;
+  is_dirty: boolean;
+  last_saved_at: string | null;
+  canvas_path: string | null;
 }
 
 export interface CanvasListItem {
@@ -47,4 +50,14 @@ export interface Statistics {
   leaf_count: number;
   node_types: Record<string, number>;
   operations_used: Record<string, number>;
+}
+
+export interface AppStatus {
+  has_canvas: boolean;
+  canvas_name: string | null;
+  canvas_path: string | null;
+  is_dirty: boolean;
+  last_saved_at: string | null;
+  autosave_interval: number;
+  node_count: number;
 }

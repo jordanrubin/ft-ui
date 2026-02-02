@@ -21,6 +21,8 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -206,6 +208,7 @@ export default function App() {
       try {
         const newCanvas = await canvasApi.create(name, goal);
         setCanvas(newCanvas);
+        setSelectedNode(null);
         setCanvasList(await canvasApi.list());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Create failed');
@@ -218,10 +221,33 @@ export default function App() {
       const loaded = await canvasApi.load(path);
       setCanvas(loaded);
       setSelectedNode(null);
+      // Refresh canvas list after load
+      setCanvasList(await canvasApi.list());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Load failed');
     }
   }, []);
+
+  const handleSaveCanvas = useCallback(async () => {
+    if (!canvas) return;
+    setIsSaving(true);
+    setSaveMessage(null);
+    try {
+      await canvasApi.save();
+      // Refresh canvas to get updated dirty state
+      const updated = await canvasApi.get();
+      setCanvas(updated);
+      // Refresh canvas list
+      setCanvasList(await canvasApi.list());
+      // Show save confirmation
+      setSaveMessage('Saved');
+      setTimeout(() => setSaveMessage(null), 2000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [canvas]);
 
   const handleUndo = useCallback(async () => {
     try {
@@ -255,10 +281,15 @@ export default function App() {
           handleUndo();
         }
       }
+      // Ctrl+S to save
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        handleSaveCanvas();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, handleSaveCanvas]);
 
   // Show login if not authenticated
   if (!isAuthenticated) {
@@ -379,10 +410,63 @@ export default function App() {
 
           {/* Current canvas stats */}
           {canvas && (
-            <div style={{ padding: '12px', borderTop: '1px solid #30363d', fontSize: '12px', color: '#666' }}>
-              <strong>{canvas.name}</strong>
-              <br />
-              {Object.keys(canvas.nodes).length} nodes
+            <div style={{ padding: '12px', borderTop: '1px solid #30363d', fontSize: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <strong style={{ color: '#c9d1d9' }}>{canvas.name}</strong>
+                {canvas.is_dirty ? (
+                  <span style={{
+                    padding: '2px 6px',
+                    background: '#f0883e',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    color: '#fff',
+                    fontWeight: 500,
+                  }}>
+                    Unsaved
+                  </span>
+                ) : saveMessage ? (
+                  <span style={{
+                    padding: '2px 6px',
+                    background: '#238636',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    color: '#fff',
+                    fontWeight: 500,
+                  }}>
+                    {saveMessage}
+                  </span>
+                ) : (
+                  <span style={{
+                    padding: '2px 6px',
+                    background: '#21262d',
+                    borderRadius: '4px',
+                    fontSize: '10px',
+                    color: '#666',
+                  }}>
+                    Saved
+                  </span>
+                )}
+              </div>
+              <div style={{ color: '#666', marginBottom: '8px' }}>
+                {Object.keys(canvas.nodes).length} nodes
+              </div>
+              <button
+                onClick={handleSaveCanvas}
+                disabled={isSaving || !canvas.is_dirty}
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  background: canvas.is_dirty ? '#238636' : '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '4px',
+                  color: canvas.is_dirty ? '#fff' : '#666',
+                  cursor: canvas.is_dirty ? 'pointer' : 'default',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                }}
+              >
+                {isSaving ? 'Saving...' : 'Save (Ctrl+S)'}
+              </button>
             </div>
           )}
         </div>

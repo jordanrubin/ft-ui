@@ -6,9 +6,12 @@ exposes core operations as REST endpoints for react frontend.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,11 +24,18 @@ from ..core.models import (
     NodeType,
     list_saved_canvases,
     get_canvas_dir,
+    get_most_recent_canvas,
     list_templates,
     get_template,
 )
 from ..core.skills import SkillLoader, SkillChain, get_default_loader
 from ..core.client import ClaudeClient, MockClient, ClientProtocol
+
+
+# --- configuration ---
+
+DEFAULT_AUTOSAVE_INTERVAL = 30  # seconds
+SESSION_FILE = ".runeforge-session.json"
 
 
 # --- pydantic models for api ---
@@ -123,9 +133,12 @@ class CanvasResponse(BaseModel):
     active_path: list[str]
     can_undo: bool
     can_redo: bool
+    is_dirty: bool = False
+    last_saved_at: Optional[str] = None
+    canvas_path: Optional[str] = None
 
     @classmethod
-    def from_canvas(cls, canvas: Canvas) -> "CanvasResponse":
+    def from_canvas(cls, canvas: Canvas, is_dirty: bool = False, last_saved_at: Optional[str] = None, canvas_path: Optional[Path] = None) -> "CanvasResponse":
         return cls(
             name=canvas.name,
             nodes={k: NodeResponse.from_node(v) for k, v in canvas.nodes.items()},
@@ -133,6 +146,9 @@ class CanvasResponse(BaseModel):
             active_path=canvas.active_path,
             can_undo=canvas.can_undo(),
             can_redo=canvas.can_redo(),
+            is_dirty=is_dirty,
+            last_saved_at=last_saved_at,
+            canvas_path=str(canvas_path) if canvas_path else None,
         )
 
 
@@ -172,14 +188,27 @@ class SkillInfo(BaseModel):
 # --- app state ---
 
 class AppState:
-    """shared application state."""
+    """shared application state with auto-save and crash recovery."""
 
-    def __init__(self, skills_dir: Optional[str] = None, mock: bool = False):
+    def __init__(
+        self,
+        skills_dir: Optional[str] = None,
+        mock: bool = False,
+        autosave_interval: int = DEFAULT_AUTOSAVE_INTERVAL,
+    ):
         self.canvas: Optional[Canvas] = None
         self.canvas_path: Optional[Path] = None
         self.skill_loader = get_default_loader(skills_dir)
         self.mock = mock
         self._client: Optional[ClientProtocol] = None
+
+        # Dirty state tracking
+        self._dirty = False
+        self._last_saved_at: Optional[str] = None
+
+        # Auto-save configuration
+        self.autosave_interval = autosave_interval
+        self._autosave_task: Optional[asyncio.Task] = None
 
     @property
     def client(self) -> ClientProtocol:
@@ -189,6 +218,20 @@ class AppState:
             else:
                 self._client = ClaudeClient()
         return self._client
+
+    @property
+    def is_dirty(self) -> bool:
+        """check if canvas has unsaved changes."""
+        return self._dirty
+
+    def mark_dirty(self) -> None:
+        """mark canvas as having unsaved changes."""
+        self._dirty = True
+
+    def mark_clean(self) -> None:
+        """mark canvas as saved."""
+        self._dirty = False
+        self._last_saved_at = datetime.now().isoformat()
 
     def format_context(self, nodes: list[CanvasNode]) -> str:
         """format context nodes as text for the prompt."""
@@ -200,18 +243,126 @@ class AppState:
                 parts.append(node.content_full)
         return "\n\n---\n\n".join(parts)
 
+    def get_session_file(self) -> Path:
+        """get path to session state file."""
+        return get_canvas_dir() / SESSION_FILE
+
+    def save_session(self) -> None:
+        """save current session state for crash recovery."""
+        session = {
+            "canvas_path": str(self.canvas_path) if self.canvas_path else None,
+            "canvas_name": self.canvas.name if self.canvas else None,
+            "last_saved_at": self._last_saved_at,
+            "timestamp": datetime.now().isoformat(),
+        }
+        try:
+            with open(self.get_session_file(), "w") as f:
+                json.dump(session, f)
+        except Exception:
+            pass  # Don't crash on session save failure
+
+    def load_session(self) -> Optional[dict]:
+        """load previous session state."""
+        try:
+            with open(self.get_session_file()) as f:
+                return json.load(f)
+        except Exception:
+            return None
+
+    def auto_save(self) -> bool:
+        """auto-save canvas if dirty and path is set. returns True if saved."""
+        if not self._dirty or not self.canvas or not self.canvas_path:
+            return False
+        try:
+            self.canvas.save(self.canvas_path)
+            self.mark_clean()
+            self.save_session()
+            return True
+        except Exception:
+            return False
+
+    async def start_autosave(self) -> None:
+        """start background auto-save task."""
+        if self._autosave_task is not None:
+            return
+        self._autosave_task = asyncio.create_task(self._autosave_loop())
+
+    async def stop_autosave(self) -> None:
+        """stop background auto-save task."""
+        if self._autosave_task:
+            self._autosave_task.cancel()
+            try:
+                await self._autosave_task
+            except asyncio.CancelledError:
+                pass
+            self._autosave_task = None
+
+    async def _autosave_loop(self) -> None:
+        """background loop for auto-saving."""
+        while True:
+            await asyncio.sleep(self.autosave_interval)
+            if self.auto_save():
+                pass  # Successfully auto-saved
+
+    def recover_from_crash(self) -> bool:
+        """attempt to recover canvas from last session. returns True if recovered."""
+        session = self.load_session()
+        if not session:
+            return False
+
+        # Try to load the canvas from the session
+        canvas_path = session.get("canvas_path")
+        if canvas_path:
+            path = Path(canvas_path)
+            if path.exists():
+                try:
+                    self.canvas = Canvas.load(path)
+                    self.canvas_path = path
+                    self._dirty = False
+                    return True
+                except Exception:
+                    pass
+
+        # Fallback: try to load most recent canvas
+        recent = get_most_recent_canvas()
+        if recent and recent.exists():
+            try:
+                self.canvas = Canvas.load(recent)
+                self.canvas_path = recent
+                self._dirty = False
+                return True
+            except Exception:
+                pass
+
+        return False
+
 
 state = AppState()
+
+
+def _canvas_response() -> CanvasResponse:
+    """helper to build CanvasResponse with current state info."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+    return CanvasResponse.from_canvas(
+        state.canvas,
+        is_dirty=state.is_dirty,
+        last_saved_at=state._last_saved_at,
+        canvas_path=state.canvas_path,
+    )
 
 
 # --- lifespan ---
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # startup
+    # startup: recover from crash and start auto-save
+    state.recover_from_crash()
+    await state.start_autosave()
     yield
-    # shutdown
-    pass
+    # shutdown: save any pending changes
+    state.auto_save()
+    await state.stop_autosave()
 
 
 # --- app ---
@@ -240,6 +391,20 @@ async def health():
     return {"status": "ok"}
 
 
+@app.get("/status")
+async def status():
+    """get current application status including dirty state and session info."""
+    return {
+        "has_canvas": state.canvas is not None,
+        "canvas_name": state.canvas.name if state.canvas else None,
+        "canvas_path": str(state.canvas_path) if state.canvas_path else None,
+        "is_dirty": state.is_dirty,
+        "last_saved_at": state._last_saved_at,
+        "autosave_interval": state.autosave_interval,
+        "node_count": len(state.canvas.nodes) if state.canvas else 0,
+    }
+
+
 @app.get("/skills", response_model=list[SkillInfo])
 async def list_skills():
     """list available skills."""
@@ -259,26 +424,33 @@ async def create_canvas(req: CanvasCreate):
     state.canvas = Canvas(name=req.name)
     root = CanvasNode.create_root(req.root_content)
     state.canvas.add_node(root)
-    return CanvasResponse.from_canvas(state.canvas)
+    # Set default path for new canvas
+    state.canvas_path = get_canvas_dir() / f"{req.name}.json"
+    state.mark_dirty()
+    state.save_session()
+    return _canvas_response()
 
 
 @app.get("/canvas", response_model=CanvasResponse)
 async def get_canvas():
     """get current canvas state."""
-    if not state.canvas:
-        raise HTTPException(status_code=404, detail="no canvas loaded")
-    return CanvasResponse.from_canvas(state.canvas)
+    return _canvas_response()
 
 
 @app.post("/canvas/load")
 async def load_canvas(path: str):
     """load canvas from file."""
+    # Auto-save current canvas before loading new one
+    state.auto_save()
+
     p = Path(path).expanduser()
     if not p.exists():
         raise HTTPException(status_code=404, detail=f"file not found: {path}")
     state.canvas = Canvas.load(p)
     state.canvas_path = p
-    return CanvasResponse.from_canvas(state.canvas)
+    state.mark_clean()
+    state.save_session()
+    return _canvas_response()
 
 
 @app.post("/canvas/save")
@@ -288,10 +460,13 @@ async def save_canvas(path: Optional[str] = None):
         raise HTTPException(status_code=404, detail="no canvas loaded")
     p = Path(path).expanduser() if path else state.canvas_path
     if not p:
-        raise HTTPException(status_code=400, detail="no path specified")
+        # Generate default path from canvas name
+        p = get_canvas_dir() / f"{state.canvas.name}.json"
     state.canvas.save(p)
     state.canvas_path = p
-    return {"saved": str(p)}
+    state.mark_clean()
+    state.save_session()
+    return {"saved": str(p), "is_dirty": False}
 
 
 @app.post("/node", response_model=NodeResponse)
@@ -314,6 +489,7 @@ async def create_node(req: NodeCreate):
 
     state.canvas.add_node(node)
     state.canvas.set_focus(node.id)
+    state.mark_dirty()
     return NodeResponse.from_node(node)
 
 
@@ -327,6 +503,7 @@ async def delete_node(node_id: str):
     if new_focus is None and node_id == state.canvas.root_id:
         raise HTTPException(status_code=400, detail="cannot delete root node")
 
+    state.mark_dirty()
     return {"deleted": node_id, "new_focus": new_focus}
 
 
@@ -374,6 +551,7 @@ async def run_skill(req: SkillRun):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.mark_dirty()
 
     return NodeResponse.from_node(new_node)
 
@@ -423,6 +601,7 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.mark_dirty()
 
     return NodeResponse.from_node(new_node)
 
@@ -468,6 +647,7 @@ async def run_chain(req: ChainRun):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.mark_dirty()
 
     return NodeResponse.from_node(new_node)
 
@@ -508,6 +688,7 @@ respond thoughtfully to the user's question about this context. be specific and 
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.mark_dirty()
 
     return NodeResponse.from_node(new_node)
 
@@ -553,8 +734,11 @@ async def create_from_template(template_name: str, canvas_name: str):
     state.canvas = Canvas(name=canvas_name)
     root = CanvasNode.create_root(template.root_content)
     state.canvas.add_node(root)
+    state.canvas_path = get_canvas_dir() / f"{canvas_name}.json"
+    state.mark_dirty()
+    state.save_session()
 
-    return CanvasResponse.from_canvas(state.canvas)
+    return _canvas_response()
 
 
 # --- undo/redo endpoints ---
@@ -568,7 +752,8 @@ async def undo():
     if not state.canvas.undo():
         raise HTTPException(status_code=400, detail="nothing to undo")
 
-    return CanvasResponse.from_canvas(state.canvas)
+    state.mark_dirty()
+    return _canvas_response()
 
 
 @app.post("/canvas/redo", response_model=CanvasResponse)
@@ -580,7 +765,8 @@ async def redo():
     if not state.canvas.redo():
         raise HTTPException(status_code=400, detail="nothing to redo")
 
-    return CanvasResponse.from_canvas(state.canvas)
+    state.mark_dirty()
+    return _canvas_response()
 
 
 # --- node editing endpoints ---
@@ -594,6 +780,7 @@ async def edit_node(node_id: str, req: NodeEdit):
     if not state.canvas.edit_node(node_id, req.content):
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
 
+    state.mark_dirty()
     return NodeResponse.from_node(state.canvas.nodes[node_id])
 
 
@@ -656,6 +843,7 @@ async def add_link(req: LinkRequest):
     if not state.canvas.add_link(req.from_id, req.to_id):
         raise HTTPException(status_code=400, detail="could not add link (invalid nodes or already linked)")
 
+    state.mark_dirty()
     return NodeResponse.from_node(state.canvas.nodes[req.from_id])
 
 
@@ -668,6 +856,7 @@ async def remove_link(from_id: str, to_id: str):
     if not state.canvas.remove_link(from_id, to_id):
         raise HTTPException(status_code=400, detail="could not remove link")
 
+    state.mark_dirty()
     return {"removed": True}
 
 
@@ -754,12 +943,28 @@ def main():
     parser.add_argument("--skills-dir", "-s", help="path to skills directory")
     parser.add_argument("--mock", "-m", action="store_true", help="use mock client")
     parser.add_argument("--reload", action="store_true", help="enable auto-reload")
+    parser.add_argument(
+        "--autosave-interval",
+        type=int,
+        default=DEFAULT_AUTOSAVE_INTERVAL,
+        help=f"auto-save interval in seconds (default: {DEFAULT_AUTOSAVE_INTERVAL})"
+    )
+    parser.add_argument(
+        "--no-autosave",
+        action="store_true",
+        help="disable auto-save"
+    )
 
     args = parser.parse_args()
 
     # configure state
     global state
-    state = AppState(skills_dir=args.skills_dir, mock=args.mock)
+    autosave = 0 if args.no_autosave else args.autosave_interval
+    state = AppState(
+        skills_dir=args.skills_dir,
+        mock=args.mock,
+        autosave_interval=autosave,
+    )
 
     uvicorn.run(
         "runeforge_canvas.api.server:app",
