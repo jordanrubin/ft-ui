@@ -351,36 +351,207 @@ function parseAskUserQuestionsOutput(content: string): ParsedResponse {
 }
 
 /**
+ * Parse markdown content into sections based on ## headers
+ */
+function parseMarkdownSections(content: string): Array<{ header: string; level: number; body: string; startIndex: number }> {
+  const sections: Array<{ header: string; level: number; body: string; startIndex: number }> = [];
+
+  // Match ## and ### headers
+  const headerPattern = /^(#{2,3})\s+(.+)$/gm;
+  const matches: Array<{ level: number; header: string; index: number; fullMatch: string }> = [];
+
+  let match;
+  while ((match = headerPattern.exec(content)) !== null) {
+    matches.push({
+      level: match[1].length,
+      header: match[2].trim(),
+      index: match.index,
+      fullMatch: match[0],
+    });
+  }
+
+  // Extract body for each section
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    const next = matches[i + 1];
+    const bodyStart = current.index + current.fullMatch.length;
+    const bodyEnd = next ? next.index : content.length;
+    const body = content.slice(bodyStart, bodyEnd).trim();
+
+    sections.push({
+      header: current.header,
+      level: current.level,
+      body,
+      startIndex: current.index,
+    });
+  }
+
+  return sections;
+}
+
+/**
+ * Detect the semantic type of a section based on its header and content
+ */
+function detectSectionType(header: string, _body: string): SubsectionType {
+  const headerLower = header.toLowerCase();
+
+  // Questions - sections asking for input/decisions
+  if (
+    headerLower.includes('question') ||
+    headerLower.includes('decision') ||
+    /\?$/.test(header) ||
+    /your\s+(preferences?|input|feedback|thoughts)/i.test(header) ||
+    /before\s+(i|we)\s+(build|proceed|start)/i.test(headerLower)
+  ) {
+    return 'question';
+  }
+
+  // Proposals - design options, approaches, recommendations
+  if (
+    headerLower.includes('option') ||
+    headerLower.includes('approach') ||
+    headerLower.includes('proposal') ||
+    headerLower.includes('design') ||
+    headerLower.includes('interface') ||
+    headerLower.includes('recommendation') ||
+    /^(my\s+)?proposed/i.test(header) ||
+    /^option\s*\d/i.test(header)
+  ) {
+    return 'proposal';
+  }
+
+  // Alternatives
+  if (headerLower.includes('alternative') || /^other\s/i.test(header)) {
+    return 'alternative';
+  }
+
+  // Challenges/problems/issues
+  if (
+    headerLower.includes('challenge') ||
+    headerLower.includes('problem') ||
+    headerLower.includes('issue') ||
+    headerLower.includes('core')
+  ) {
+    return 'crux';
+  }
+
+  // Implementation details
+  if (
+    headerLower.includes('implementation') ||
+    headerLower.includes('technical')
+  ) {
+    return 'section';
+  }
+
+  return 'section';
+}
+
+/**
+ * Extract numbered items from section body, stopping at ## boundaries
+ */
+function extractNumberedItemsFromBody(body: string): Array<{ num: number; title: string; description: string }> {
+  const items: Array<{ num: number; title: string; description: string }> = [];
+
+  // Pattern: "1. **Title**: desc" or "1. **Title**\ndesc" or "1. Title\ndesc"
+  // Stop at next numbered item or end
+  const pattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:\s*[:\-–]\s*|\s*\n)([\s\S]*?)(?=\n\d+\.\s|$)/g;
+
+  let match;
+  while ((match = pattern.exec(body)) !== null) {
+    const num = parseInt(match[1], 10);
+    let title = match[2].trim();
+    const description = match[3].trim();
+
+    // Clean up: remove trailing ** from title
+    title = title.replace(/\*\*$/, '').trim();
+
+    // Skip process/meta steps
+    if (/^step\s*\d/i.test(title)) continue;
+    if (title.length < 3) continue;
+
+    items.push({ num, title, description });
+  }
+
+  return items;
+}
+
+/**
  * Generic parser for unknown skill types
- * Only creates cards for clearly structured numbered items
+ * Properly handles markdown structure with ## headers
  */
 function parseGenericOutput(content: string): ParsedResponse {
   const subsections: Subsection[] = [];
 
-  // Only parse clear numbered items with substantial content
-  const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n:]+?)\*?\*?\s*[:\n]\s*([\s\S]*?)(?=\n\d+\.|$)/g;
+  // First, parse markdown sections
+  const sections = parseMarkdownSections(content);
 
-  let match;
-  while ((match = numberedPattern.exec(content)) !== null) {
-    const title = match[2].trim();
-    const description = match[3].trim();
+  // If we have multiple ## sections, use section-based parsing
+  if (sections.length >= 2) {
+    for (const section of sections) {
+      const sectionType = detectSectionType(section.header, section.body);
 
-    // Skip if title looks like a process step or is too short
-    if (title.length < 10) continue;
-    if (/^step\s*\d/i.test(title)) continue;
-    if (/identify|examine|consider|note|generate/i.test(title) && title.length < 30) continue;
+      // Extract numbered items within this section
+      const items = extractNumberedItemsFromBody(section.body);
+
+      if (items.length >= 2) {
+        // Multiple items: create a card for each
+        for (const item of items) {
+          const itemType: SubsectionType =
+            sectionType === 'question' ? 'question' :
+            sectionType === 'proposal' ? 'proposal' :
+            sectionType === 'alternative' ? 'alternative' : 'generic';
+
+          subsections.push({
+            id: generateId(),
+            type: itemType,
+            title: item.title,
+            content: item.description.slice(0, 600),
+            collapsed: false,
+            tags: [{
+              label: section.header.slice(0, 25),
+              color: itemType === 'question' ? 'orange' :
+                     itemType === 'proposal' ? 'blue' :
+                     itemType === 'alternative' ? 'purple' : 'gray',
+            }],
+          });
+        }
+      } else if (section.body.length > 80) {
+        // No items or just one: create a single card for the section
+        // Skip if section is too short
+        subsections.push({
+          id: generateId(),
+          type: sectionType,
+          title: section.header,
+          content: section.body.slice(0, 800),
+          collapsed: false,
+        });
+      }
+    }
+
+    if (subsections.length > 0) {
+      return {
+        subsections,
+        rawContent: content,
+      };
+    }
+  }
+
+  // Fallback: try to parse flat numbered items (for content without headers)
+  const flatItems = extractNumberedItemsFromBody(content);
+
+  for (const item of flatItems) {
+    if (item.title.length < 8) continue;
+    if (/identify|examine|consider|note|generate/i.test(item.title) && item.title.length < 25) continue;
 
     subsections.push({
       id: generateId(),
       type: 'generic',
-      title,
-      content: description.slice(0, 300), // Limit description length
+      title: item.title,
+      content: item.description.slice(0, 400),
       collapsed: false,
     });
   }
 
-  // If no good numbered items, don't create fake structure
-  // Just return empty subsections - the viewer will show raw content
   return {
     subsections,
     rawContent: content,
@@ -457,7 +628,9 @@ export function getSuggestedSkills(type: SubsectionType): string[] {
     metaphor: ['@antithesize', '@stressify', '@simulate'],
     rhyme: ['@antithesize', '@excavate', '@stressify'],
     synthesis: ['@antithesize', '@stressify', '@excavate'],
-    question: ['@excavate', '@diverge', '@simulate'],
+    proposal: ['@stressify', '@antithesize', '@excavate'],
+    question: ['@excavate', '@diverge', '@antithesize'],
+    section: ['@excavate', '@antithesize', '@stressify'],
     generic: ['@excavate', '@antithesize', '@stressify'],
   };
 
