@@ -19,57 +19,41 @@ FocusMode = Literal["planning", "critical", "positive", "near", "far", "internal
 
 CANVAS_FORMAT_INSTRUCTIONS = '''
 <output_format>
-OUTPUT AS JSON matching this exact schema (no markdown, no prose, just JSON):
+You MUST output ONLY a raw JSON object. No markdown. No code fences. No explanation.
 
+SCHEMA:
 {
-  "summary": "string ~100 chars - the main takeaway",
-  "blocks": [
-    {
-      "kind": "string - category like 'cruxes', 'antitheses', 'alternatives', 'failure_modes', 'questions'",
-      "title": "string - display title for this section",
-      "items": [
-        {
-          "id": "string - unique identifier like 'item_1'",
-          "text": "string - the main content",
-          "title": "string? - optional short title",
-          "importance": "'critical' | 'high' | 'medium' | 'low'",
-          "polarity": "'positive' | 'negative' | 'neutral' | 'mixed'",
-          "tags": ["optional", "string", "tags"]
-        }
-      ]
-    }
-  ],
-  "suggested_moves": [
-    {
-      "skill": "@skill_name",
-      "reason": "why this move makes sense",
-      "target": "optional - which item id to target"
-    }
-  ],
-  "warnings": ["optional caveats or assumptions"],
-  "edges": [
-    {
-      "from": "item_id",
-      "to": "item_id",
-      "type": "'supports' | 'refutes' | 'depends_on' | 'enables' | 'blocks' | 'links_to'"
-    }
-  ]
+  "summary": "1 sentence, max 100 chars",
+  "blocks": [{
+    "kind": "the_type",
+    "title": "Section Name",
+    "items": [{
+      "id": "item_1",
+      "title": "short title, max 8 words",
+      "text": "1 sentence explanation",
+      "importance": "critical|high|medium|low",
+      "tags": ["tag1", "tag2"]
+    }]
+  }],
+  "suggested_moves": [{"skill": "@skillname", "reason": "why"}],
+  "warnings": ["caveat1"]
 }
 
-CRITICAL RULES:
-- Output ONLY valid JSON, no markdown code blocks, no prose before/after
-- Every block must have at least one item
-- Items need id, text, and importance at minimum
-- Use the kind that matches your skill's output type
-- Keep text concise: 1-3 sentences per item
-- suggested_moves should be actionable next steps
+STRICT RULES:
+1. Output RAW JSON only - no ```json, no prose, no preamble
+2. NO MARKDOWN in values - no **, no *, no [], no > quotes
+3. Extract [BRACKETED TERMS] as tags array, not in title/text
+4. title: max 8 words, plain text, no punctuation except ?
+5. text: 1 sentence max, plain text
+6. Keep total items under 6 unless critical
+7. suggested_moves: 1-3 relevant next skills
 </output_format>
 '''
 
 VERBOSITY_INSTRUCTIONS = {
-    0: "\nBe extremely concise. 1 sentence per item maximum. Only include critical/high importance items.",
-    1: "\nBe concise. 1-2 sentences per item. Include high and medium importance items.",
-    2: "\nBe thorough. 2-3 sentences per item. Include all importance levels with full reasoning.",
+    0: "\nMINIMAL OUTPUT: 1 sentence per item. Max 4 items total. Only critical findings.",
+    1: "\nCONCISE OUTPUT: 1 sentence per item. Max 6 items. High/critical findings only.",
+    2: "\nDETAILED OUTPUT: 1-2 sentences per item. All importance levels.",
 }
 
 FOCUS_INSTRUCTIONS = {
