@@ -13,9 +13,10 @@ export default function App() {
   });
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
-  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const [_templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [canvasList, setCanvasList] = useState<CanvasListItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [linkedNodes, setLinkedNodes] = useState<CanvasNode[]>([]);
   const [backlinks, setBacklinks] = useState<CanvasNode[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -69,10 +70,27 @@ export default function App() {
   }, [selectedNode]);
 
   const handleNodeClick = useCallback(
-    async (nodeId: string) => {
+    async (nodeId: string, ctrlKey: boolean = false) => {
       try {
-        await nodeApi.setFocus(nodeId);
-        await refreshCanvas();
+        if (ctrlKey) {
+          // Multi-select mode: toggle node in selection
+          setSelectedNodeIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(nodeId)) {
+              next.delete(nodeId);
+            } else {
+              next.add(nodeId);
+            }
+            return next;
+          });
+          // Open drawer if we have selections
+          setShowSidebar(true);
+        } else {
+          // Normal click: clear multi-selection and focus
+          setSelectedNodeIds(new Set());
+          await nodeApi.setFocus(nodeId);
+          await refreshCanvas();
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to focus node');
       }
@@ -137,6 +155,32 @@ export default function App() {
     },
     [selectedNode, refreshCanvas]
   );
+
+  const handleSkillRunOnMultiple = useCallback(
+    async (skillName: string) => {
+      if (selectedNodeIds.size === 0) return;
+      setIsRunning(true);
+      setError(null);
+      try {
+        const nodeIds = [...selectedNodeIds];
+        const newNode = await skillApi.runOnMultiple(skillName, nodeIds);
+        setSelectedNodeIds(new Set()); // clear selection
+        await refreshCanvas();
+        if (newNode?.id) {
+          setSelectedNode(newNode);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Skill on multiple nodes failed');
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [selectedNodeIds, refreshCanvas]
+  );
+
+  const handleClearMultiSelection = useCallback(() => {
+    setSelectedNodeIds(new Set());
+  }, []);
 
   const handleChatSubmit = useCallback(
     async (prompt: string) => {
@@ -486,6 +530,7 @@ export default function App() {
         <ReactFlowProvider>
           <CanvasView
             canvas={canvas}
+            selectedNodeIds={selectedNodeIds}
             onNodeClick={handleNodeClick}
             onNodeDoubleClick={handleNodeDoubleClick}
           />
@@ -493,7 +538,7 @@ export default function App() {
       </div>
 
       {/* Node detail drawer */}
-      {selectedNode && (
+      {(selectedNode || selectedNodeIds.size > 0) && (
         <NodeDrawer
           node={selectedNode}
           skills={skills}
@@ -507,6 +552,10 @@ export default function App() {
           linkedNodes={linkedNodes}
           backlinks={backlinks}
           isRunning={isRunning}
+          selectedNodeIds={selectedNodeIds}
+          allNodes={canvas?.nodes || {}}
+          onSkillRunOnMultiple={handleSkillRunOnMultiple}
+          onClearMultiSelection={handleClearMultiSelection}
         />
       )}
     </div>

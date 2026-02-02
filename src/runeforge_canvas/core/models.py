@@ -435,6 +435,61 @@ class Canvas:
 
         return context
 
+    def get_context_for_multiple_nodes(self, node_ids: list[str]) -> list[CanvasNode]:
+        """gather context from multiple selected nodes.
+
+        collects nodes in a sensible order: tries to find common ancestor chain,
+        then includes all selected nodes.
+        """
+        if not node_ids:
+            return []
+
+        context = []
+        seen = set()
+
+        # find the common ancestor path by checking which nodes have the shallowest depth
+        # and include ancestor chain from root to that point
+        def get_depth(nid: str) -> int:
+            depth = 0
+            current = nid
+            while current and current in self.nodes:
+                depth += 1
+                current = self.nodes[current].parent_id
+            return depth
+
+        # sort nodes by depth (shallowest first)
+        sorted_nodes = sorted(
+            [(nid, get_depth(nid)) for nid in node_ids if nid in self.nodes],
+            key=lambda x: x[1]
+        )
+
+        if not sorted_nodes:
+            return []
+
+        # get ancestor chain of the shallowest node as common context
+        shallowest_id = sorted_nodes[0][0]
+        ancestor_chain = []
+        current = shallowest_id
+        while current and current in self.nodes:
+            ancestor_chain.append(current)
+            current = self.nodes[current].parent_id
+        ancestor_chain.reverse()  # root to node
+
+        # add ancestors (excluding the selected nodes themselves)
+        for nid in ancestor_chain:
+            if nid not in seen:
+                if nid not in node_ids:  # don't add selected nodes here
+                    context.append(self.nodes[nid])
+                seen.add(nid)
+
+        # now add all selected nodes in depth order
+        for nid, _ in sorted_nodes:
+            if nid not in seen:
+                context.append(self.nodes[nid])
+                seen.add(nid)
+
+        return context
+
     # --- statistics ---
 
     def get_statistics(self) -> dict:

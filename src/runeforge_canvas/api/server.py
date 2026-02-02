@@ -59,6 +59,13 @@ class SkillRunOnSelection(BaseModel):
     params: dict = {}
 
 
+class SkillRunOnMultiple(BaseModel):
+    """request to run a skill on multiple nodes."""
+    skill_name: str
+    node_ids: list[str]
+    params: dict = {}
+
+
 class ChatRun(BaseModel):
     """request to run freeform chat."""
     prompt: str
@@ -419,6 +426,53 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
         operation=skill.display_name,
         content=result,
         parent_id=focus.id,
+        context_snapshot=[n.id for n in context_nodes],
+    )
+    state.canvas.add_node(new_node)
+    state.canvas.set_focus(new_node.id)
+
+    return NodeResponse.from_node(new_node)
+
+
+@app.post("/skill/run-on-multiple", response_model=NodeResponse)
+async def run_skill_on_multiple(req: SkillRunOnMultiple):
+    """run a skill on multiple selected nodes."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    skill = state.skill_loader.get(req.skill_name)
+    if not skill:
+        raise HTTPException(status_code=404, detail=f"skill not found: {req.skill_name}")
+
+    if not req.node_ids:
+        raise HTTPException(status_code=400, detail="no nodes specified")
+
+    # validate all nodes exist
+    for node_id in req.node_ids:
+        if node_id not in state.canvas.nodes:
+            raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
+
+    # gather context from all selected nodes
+    context_nodes = state.canvas.get_context_for_multiple_nodes(req.node_ids)
+    context_text = state.format_context(context_nodes)
+
+    # build prompt with multi-node context
+    multi_node_context = f"""<multi-node-selection count="{len(req.node_ids)}">
+The following context includes {len(req.node_ids)} selected nodes that the user wants you to analyze together.
+</multi-node-selection>
+
+{context_text}"""
+
+    prompt = skill.build_prompt(multi_node_context, req.params)
+    result = await state.client.complete(prompt)
+
+    # create result node as child of the first selected node
+    # (or could create it at root level - using first selected as parent for now)
+    parent_id = req.node_ids[0]
+    new_node = CanvasNode.create_operation(
+        operation=skill.display_name,
+        content=result,
+        parent_id=parent_id,
         context_snapshot=[n.id for n in context_nodes],
     )
     state.canvas.add_node(new_node)

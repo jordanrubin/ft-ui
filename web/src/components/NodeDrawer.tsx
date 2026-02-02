@@ -16,6 +16,10 @@ interface NodeDrawerProps {
   linkedNodes: CanvasNode[];
   backlinks: CanvasNode[];
   isRunning: boolean;
+  selectedNodeIds: Set<string>;
+  allNodes: Record<string, CanvasNode>;
+  onSkillRunOnMultiple: (skillName: string) => void;
+  onClearMultiSelection: () => void;
 }
 
 export default function NodeDrawer({
@@ -31,6 +35,10 @@ export default function NodeDrawer({
   linkedNodes,
   backlinks,
   isRunning,
+  selectedNodeIds,
+  allNodes,
+  onSkillRunOnMultiple,
+  onClearMultiSelection,
 }: NodeDrawerProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -38,12 +46,167 @@ export default function NodeDrawer({
   const [linkInput, setLinkInput] = useState('');
   const [activeTab, setActiveTab] = useState<'content' | 'skills' | 'links'>('content');
 
+  const hasMultiSelection = selectedNodeIds.size > 0;
+  const selectedNodes = Array.from(selectedNodeIds).map((id) => allNodes[id]).filter(Boolean);
+
   useEffect(() => {
     if (node) {
       setEditContent(node.content_full);
       setIsEditing(false);
     }
   }, [node]);
+
+  // Show multi-selection UI if nodes are selected
+  if (hasMultiSelection) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '400px',
+          height: '100vh',
+          background: '#161b22',
+          borderLeft: '1px solid #30363d',
+          display: 'flex',
+          flexDirection: 'column',
+          zIndex: 1000,
+          boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.3)',
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '16px',
+            borderBottom: '1px solid #30363d',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <span
+              style={{
+                display: 'inline-block',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                background: '#22c55e',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 600,
+              }}
+            >
+              {selectedNodeIds.size} nodes selected
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={onClearMultiSelection}
+              style={{
+                background: '#21262d',
+                border: '1px solid #30363d',
+                color: '#c9d1d9',
+                fontSize: '12px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+              }}
+            >
+              Clear
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#666',
+                fontSize: '24px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+              }}
+            >
+              x
+            </button>
+          </div>
+        </div>
+
+        {/* Selected nodes list */}
+        <div style={{ padding: '16px', borderBottom: '1px solid #30363d', maxHeight: '200px', overflow: 'auto' }}>
+          <h4 style={{ margin: '0 0 12px', color: '#22c55e', fontSize: '12px', textTransform: 'uppercase' }}>
+            Selected Nodes
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {selectedNodes.map((n) => (
+              <div
+                key={n.id}
+                style={{
+                  padding: '8px 10px',
+                  background: '#0d2818',
+                  borderRadius: '4px',
+                  borderLeft: '3px solid #22c55e',
+                }}
+              >
+                <div style={{ fontSize: '11px', color: '#22c55e', marginBottom: '2px' }}>
+                  {n.operation || n.type} ({n.id})
+                </div>
+                <div style={{ color: '#c9d1d9', fontSize: '12px' }}>
+                  {n.content_compressed}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Skills section */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+          <h4 style={{ margin: '0 0 12px', color: '#c9d1d9', fontSize: '14px' }}>
+            Run skill on all selected nodes
+          </h4>
+          <p style={{ color: '#666', fontSize: '12px', marginBottom: '16px' }}>
+            The skill will be run using context from all {selectedNodeIds.size} selected nodes combined.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+            {skills.map((skill) => (
+              <button
+                key={skill.name}
+                onClick={() => onSkillRunOnMultiple(skill.name)}
+                disabled={isRunning}
+                style={{
+                  padding: '12px',
+                  background: '#21262d',
+                  border: '1px solid #22c55e',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: isRunning ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  opacity: isRunning ? 0.6 : 1,
+                }}
+              >
+                <div style={{ fontWeight: 600, marginBottom: '4px', color: '#22c55e' }}>{skill.display_name}</div>
+                <div style={{ fontSize: '11px', color: '#666' }}>{skill.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Loading indicator */}
+        {isRunning && (
+          <div
+            style={{
+              padding: '12px 16px',
+              background: '#21262d',
+              borderTop: '1px solid #30363d',
+              color: '#22c55e',
+              fontSize: '13px',
+              textAlign: 'center',
+            }}
+          >
+            Running skill on {selectedNodeIds.size} nodes...
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!node) return null;
 
