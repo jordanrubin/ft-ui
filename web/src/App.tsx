@@ -26,6 +26,8 @@ export default function App() {
   const [planFiles, setPlanFiles] = useState<PlanFileInfo[]>([]);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [showCanvasPicker, setShowCanvasPicker] = useState(false);
+  const [showDirectoryInput, setShowDirectoryInput] = useState(false);
+  const [directoryPath, setDirectoryPath] = useState('');
   const [selectedSubsectionContent, setSelectedSubsectionContent] = useState<string | undefined>();
 
   // Sidebar shows skills pane when a node is selected
@@ -333,6 +335,21 @@ export default function App() {
     }
   }, []);
 
+  const handleLoadFromDirectory = useCallback(async (dirPath: string) => {
+    try {
+      const newCanvas = await canvasApi.createFromDirectory(dirPath, undefined, true);
+      setCanvas(newCanvas);
+      setSelectedNode(null);
+      setShowDirectoryInput(false);
+      setDirectoryPath('');
+      // Refresh canvas list
+      const list = await canvasApi.list();
+      setCanvasList(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Load from directory failed');
+    }
+  }, []);
+
   const handleUndo = useCallback(async () => {
     try {
       const updated = await canvasApi.undo();
@@ -482,6 +499,64 @@ export default function App() {
               >
                 Load Saved Canvas
               </button>
+            )}
+            <button
+              onClick={() => setShowDirectoryInput(!showDirectoryInput)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                marginTop: '8px',
+                background: '#21262d',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#c9d1d9',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 500,
+              }}
+            >
+              Load from Directory
+            </button>
+            {showDirectoryInput && (
+              <div style={{ marginTop: '8px' }}>
+                <input
+                  type="text"
+                  value={directoryPath}
+                  onChange={(e) => setDirectoryPath(e.target.value)}
+                  placeholder="/path/to/project"
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0d1117',
+                    border: '1px solid #30363d',
+                    borderRadius: '4px',
+                    color: '#c9d1d9',
+                    fontSize: '13px',
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && directoryPath.trim()) {
+                      handleLoadFromDirectory(directoryPath.trim());
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => directoryPath.trim() && handleLoadFromDirectory(directoryPath.trim())}
+                  disabled={!directoryPath.trim()}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    marginTop: '4px',
+                    background: directoryPath.trim() ? '#238636' : '#21262d',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    cursor: directoryPath.trim() ? 'pointer' : 'not-allowed',
+                    fontSize: '13px',
+                  }}
+                >
+                  Load
+                </button>
+              </div>
             )}
           </div>
 

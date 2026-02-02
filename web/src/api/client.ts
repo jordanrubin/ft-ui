@@ -74,6 +74,17 @@ export const canvasApi = {
       method: 'POST',
       body: JSON.stringify({ plan_path: planPath, canvas_name: canvasName }),
     }),
+
+  // Create from directory
+  createFromDirectory: (directoryPath: string, canvasName?: string, includeContents = false) =>
+    request<Canvas>('/canvas/from-directory', {
+      method: 'POST',
+      body: JSON.stringify({
+        directory_path: directoryPath,
+        canvas_name: canvasName,
+        include_contents: includeContents,
+      }),
+    }),
 };
 
 // Plan file operations

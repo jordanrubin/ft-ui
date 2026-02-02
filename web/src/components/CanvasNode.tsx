@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { CanvasNode as CanvasNodeType } from '../types/canvas';
+import { stripMarkdown } from '../utils/markdown';
 
 export interface CanvasNodeData extends Record<string, unknown> {
   node: CanvasNodeType;
@@ -121,7 +122,7 @@ function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
           WebkitBoxOrient: 'vertical',
         }}
       >
-        {node.content_compressed}
+        {stripMarkdown(node.content_compressed)}
       </div>
 
       {/* Links indicator */}

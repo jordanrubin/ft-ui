@@ -342,6 +342,105 @@ async def create_canvas_from_plan(req: CanvasFromPlan):
     return CanvasResponse.from_canvas(state.canvas)
 
 
+class CanvasFromDirectory(BaseModel):
+    """request to create canvas from a directory."""
+    directory_path: str
+    canvas_name: Optional[str] = None
+    include_contents: bool = False  # include key file contents
+    max_depth: int = 4
+
+
+def _generate_tree(path: Path, prefix: str = "", depth: int = 0, max_depth: int = 4) -> list[str]:
+    """generate a directory tree as list of lines."""
+    if depth > max_depth:
+        return []
+
+    lines = []
+    # skip common non-essential directories
+    skip_dirs = {'.git', 'node_modules', '__pycache__', '.venv', 'venv', 'dist', 'build', '.egg-info', '.pytest_cache', '.mypy_cache'}
+    skip_extensions = {'.pyc', '.pyo', '.so', '.o', '.a'}
+
+    try:
+        items = sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower()))
+    except PermissionError:
+        return []
+
+    # filter items
+    items = [i for i in items if i.name not in skip_dirs and i.suffix not in skip_extensions and not i.name.startswith('.')]
+
+    for i, item in enumerate(items):
+        is_last = i == len(items) - 1
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{item.name}")
+
+        if item.is_dir():
+            extension = "    " if is_last else "│   "
+            lines.extend(_generate_tree(item, prefix + extension, depth + 1, max_depth))
+
+    return lines
+
+
+def _get_key_files(path: Path) -> list[tuple[str, str]]:
+    """get contents of key files in a directory."""
+    key_patterns = [
+        "README.md", "README", "readme.md",
+        "pyproject.toml", "package.json", "Cargo.toml",
+        "CLAUDE.md", "claude.md",
+    ]
+    key_files = []
+
+    for pattern in key_patterns:
+        fp = path / pattern
+        if fp.exists() and fp.is_file():
+            try:
+                content = fp.read_text()[:2000]  # limit size
+                key_files.append((pattern, content))
+            except Exception:
+                pass
+
+    return key_files
+
+
+@app.post("/canvas/from-directory", response_model=CanvasResponse)
+async def create_canvas_from_directory(req: CanvasFromDirectory):
+    """create a new canvas from a directory structure."""
+    dir_path = Path(req.directory_path).expanduser().resolve()
+    if not dir_path.exists():
+        raise HTTPException(status_code=404, detail=f"directory not found: {req.directory_path}")
+    if not dir_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"not a directory: {req.directory_path}")
+
+    name = req.canvas_name or dir_path.name
+
+    # generate content
+    lines = [f"# {name}", "", "## Structure", "```"]
+    lines.append(dir_path.name + "/")
+    lines.extend(_generate_tree(dir_path, "", 0, req.max_depth))
+    lines.append("```")
+
+    if req.include_contents:
+        key_files = _get_key_files(dir_path)
+        if key_files:
+            lines.append("")
+            lines.append("## Key Files")
+            for fname, content in key_files:
+                lines.append("")
+                lines.append(f"### {fname}")
+                lines.append("```")
+                lines.append(content)
+                lines.append("```")
+
+    content = "\n".join(lines)
+
+    state.canvas = Canvas(name=name)
+    root = CanvasNode.create_root(content)
+    state.canvas.add_node(root)
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
+    state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+    state.auto_save()
+    return CanvasResponse.from_canvas(state.canvas)
+
+
 @app.get("/canvas", response_model=CanvasResponse)
 async def get_canvas():
     """get current canvas state."""
