@@ -13,6 +13,9 @@ export type SubsectionType =
   | 'metaphor'
   | 'rhyme'
   | 'synthesis'
+  | 'proposal'     // design proposals, interface options
+  | 'question'     // questions requiring user input/decision
+  | 'section'      // generic markdown section
   | 'generic';
 
 export type ImportanceLevel = 'high' | 'medium' | 'low';
@@ -116,5 +119,8 @@ export const SUBSECTION_COLORS: Record<SubsectionType, string> = {
   metaphor: '#e0f7fa',
   rhyme: '#fff3e0',
   synthesis: '#f1f8e9',
+  proposal: '#e8eaf6',   // indigo-tinted for proposals
+  question: '#fff8e1',   // amber-tinted for questions
+  section: '#f5f5f5',    // neutral gray for generic sections
   generic: '#fafafa',
 };
