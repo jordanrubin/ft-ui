@@ -350,14 +350,14 @@ export function isStructuredResponse(content: string): boolean {
 
   // Or has multiple markdown headers (## sections)
   const headerMatches = content.match(/^##\s+.+$/gm);
-  const hasMultipleSections = headerMatches && headerMatches.length >= 2;
+  const hasMultipleSections = headerMatches !== null && headerMatches.length >= 2;
 
   // Or has rhyme/pattern markers
   const hasRhymeMarkers = /rhyme|pattern|analog|motif|echo|structural\s*match/i.test(content);
 
   // Or has bullet points with substantial content
   const bulletMatches = content.match(/^\s*[-*•]\s+.{15,}/gm);
-  const hasSubstantialBullets = bulletMatches && bulletMatches.length >= 3;
+  const hasSubstantialBullets = bulletMatches !== null && bulletMatches.length >= 3;
 
   return hasNumberedItems || hasSkillMarkers || hasMultipleSections ||
          (hasRhymeMarkers && (hasSubstantialBullets || hasMultipleSections));

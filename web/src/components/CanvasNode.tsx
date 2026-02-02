@@ -1,13 +1,16 @@
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
 import type { CanvasNode as CanvasNodeType } from '../types/canvas';
 
-export interface CanvasNodeData {
+export interface CanvasNodeData extends Record<string, unknown> {
   node: CanvasNodeType;
   isActive: boolean;
   isFocused: boolean;
   hasLinks: boolean;
+  isSelected: boolean;
 }
+
+export type CanvasNodeType2 = Node<CanvasNodeData, 'canvas'>;
 
 const typeColors: Record<string, { bg: string; border: string; text: string }> = {
   root: { bg: '#1a1a2e', border: '#4a4a6a', text: '#ffffff' },
@@ -29,22 +32,34 @@ const operationColors: Record<string, string> = {
   chat: '#607d8b',
 };
 
-function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeData>) {
-  const { node, isActive, isFocused, hasLinks } = data;
+function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
+  const { node, isActive, isFocused, hasLinks, isSelected } = data as CanvasNodeData;
   const colors = typeColors[node.type] || typeColors.user;
   const operationColor = node.operation ? operationColors[node.operation] || '#666' : null;
+
+  // Determine border color: multi-selected > focused > active > default
+  const borderColor = isSelected ? '#22c55e' : isFocused ? '#ffd700' : isActive ? '#4dabf7' : colors.border;
+
+  // Determine box shadow: multi-selected gets green glow
+  const boxShadow = isSelected
+    ? '0 0 12px rgba(34, 197, 94, 0.5), 0 0 0 2px #22c55e'
+    : selected
+    ? '0 0 0 2px #fff'
+    : isFocused
+    ? '0 0 12px rgba(255, 215, 0, 0.4)'
+    : 'none';
 
   return (
     <div
       style={{
         padding: '12px 16px',
         borderRadius: '8px',
-        background: colors.bg,
-        border: `2px solid ${isFocused ? '#ffd700' : isActive ? '#4dabf7' : colors.border}`,
+        background: isSelected ? '#0d2818' : colors.bg,
+        border: `2px solid ${borderColor}`,
         color: colors.text,
         minWidth: '180px',
         maxWidth: '280px',
-        boxShadow: selected ? '0 0 0 2px #fff' : isFocused ? '0 0 12px rgba(255, 215, 0, 0.4)' : 'none',
+        boxShadow,
         cursor: 'pointer',
         transition: 'all 0.2s ease',
       }}

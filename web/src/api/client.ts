@@ -137,6 +137,12 @@ export const skillApi = {
       body: JSON.stringify({ skill_name: skillName, node_id: nodeId, selected_content: selectedContent, params }),
     }),
 
+  runOnMultiple: (skillName: string, nodeIds: string[], params: Record<string, unknown> = {}) =>
+    request<CanvasNode>('/skill/run-on-multiple', {
+      method: 'POST',
+      body: JSON.stringify({ skill_name: skillName, node_ids: nodeIds, params }),
+    }),
+
   runChain: (chainText: string, nodeId: string) =>
     request<CanvasNode>('/chain/run', {
       method: 'POST',

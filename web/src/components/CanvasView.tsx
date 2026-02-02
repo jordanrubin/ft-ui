@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -6,18 +6,15 @@ import {
   MiniMap,
   useNodesState,
   useEdgesState,
-  type Node,
   type Edge,
-  type OnNodesChange,
-  type OnEdgesChange,
   MarkerType,
   ConnectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 
-import CanvasNodeComponent, { type CanvasNodeData } from './CanvasNode';
-import type { Canvas, CanvasNode } from '../types/canvas';
+import CanvasNodeComponent, { type CanvasNodeType2 } from './CanvasNode';
+import type { Canvas } from '../types/canvas';
 
 const nodeTypes = {
   canvas: CanvasNodeComponent,
@@ -25,16 +22,17 @@ const nodeTypes = {
 
 interface CanvasViewProps {
   canvas: Canvas | null;
-  onNodeClick: (nodeId: string) => void;
+  selectedNodeIds: Set<string>;
+  onNodeClick: (nodeId: string, ctrlKey: boolean) => void;
   onNodeDoubleClick: (nodeId: string) => void;
 }
 
 // Use dagre for automatic layout
 function getLayoutedElements(
-  nodes: Node<CanvasNodeData>[],
+  nodes: CanvasNodeType2[],
   edges: Edge[],
   direction = 'TB'
-): { nodes: Node<CanvasNodeData>[]; edges: Edge[] } {
+): { nodes: CanvasNodeType2[]; edges: Edge[] } {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({ rankdir: direction, nodesep: 80, ranksep: 100 });
@@ -55,7 +53,7 @@ function getLayoutedElements(
 
   dagre.layout(dagreGraph);
 
-  const layoutedNodes = nodes.map((node) => {
+  const layoutedNodes: CanvasNodeType2[] = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     return {
       ...node,
@@ -69,11 +67,11 @@ function getLayoutedElements(
   return { nodes: layoutedNodes, edges };
 }
 
-function canvasToFlow(canvas: Canvas): { nodes: Node<CanvasNodeData>[]; edges: Edge[] } {
+function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: CanvasNodeType2[]; edges: Edge[] } {
   const activePath = new Set(canvas.active_path);
   const focusId = canvas.active_path[canvas.active_path.length - 1];
 
-  const nodes: Node<CanvasNodeData>[] = Object.values(canvas.nodes).map((node) => ({
+  const nodes: CanvasNodeType2[] = Object.values(canvas.nodes).map((node) => ({
     id: node.id,
     type: 'canvas',
     position: { x: 0, y: 0 }, // Will be set by dagre
@@ -82,6 +80,7 @@ function canvasToFlow(canvas: Canvas): { nodes: Node<CanvasNodeData>[]; edges: E
       isActive: activePath.has(node.id),
       isFocused: node.id === focusId,
       hasLinks: node.links_to.length > 0,
+      isSelected: selectedNodeIds.has(node.id),
     },
   }));
 
@@ -134,38 +133,39 @@ function canvasToFlow(canvas: Canvas): { nodes: Node<CanvasNodeData>[]; edges: E
   return getLayoutedElements(nodes, edges);
 }
 
-export default function CanvasView({ canvas, onNodeClick, onNodeDoubleClick }: CanvasViewProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<CanvasNodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onNodeDoubleClick }: CanvasViewProps) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNodeType2>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Update nodes/edges when canvas changes
+  // Update nodes/edges when canvas or selection changes
   useEffect(() => {
     if (canvas && Object.keys(canvas.nodes).length > 0) {
-      const { nodes: layoutedNodes, edges: layoutedEdges } = canvasToFlow(canvas);
+      const { nodes: layoutedNodes, edges: layoutedEdges } = canvasToFlow(canvas, selectedNodeIds);
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
     } else {
       setNodes([]);
       setEdges([]);
     }
-  }, [canvas, setNodes, setEdges]);
+  }, [canvas, selectedNodeIds, setNodes, setEdges]);
 
   const handleNodeClick = useCallback(
-    (_: React.MouseEvent, node: Node<CanvasNodeData>) => {
-      onNodeClick(node.id);
+    (event: React.MouseEvent, node: CanvasNodeType2) => {
+      onNodeClick(node.id, event.ctrlKey || event.metaKey);
     },
     [onNodeClick]
   );
 
   const handleNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, node: Node<CanvasNodeData>) => {
+    (_: React.MouseEvent, node: CanvasNodeType2) => {
       onNodeDoubleClick(node.id);
     },
     [onNodeDoubleClick]
   );
 
   // Custom minimap node color
-  const minimapNodeColor = useCallback((node: Node<CanvasNodeData>) => {
+  const minimapNodeColor = useCallback((node: CanvasNodeType2) => {
+    if (node.data.isSelected) return '#22c55e';
     if (node.data.isFocused) return '#ffd700';
     if (node.data.isActive) return '#4dabf7';
     switch (node.data.node.type) {
