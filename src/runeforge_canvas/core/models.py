@@ -26,6 +26,7 @@ class NodeType(Enum):
     ROOT = "root"           # starting question/context
     OPERATION = "operation" # result of a runeforge skill
     USER = "user"           # user annotation/note
+    PLAN = "plan"           # synthesized plan from multiple sources
 
 
 @dataclass
@@ -44,6 +45,10 @@ class CanvasNode:
     # for future cross-linking (research entanglement)
     links_to: list[str] = field(default_factory=list)
     context_snapshot: list[str] = field(default_factory=list)
+
+    # for plan synthesis
+    excluded: bool = False  # mark node to exclude from plan synthesis
+    source_ids: list[str] = field(default_factory=list)  # for plan nodes: which nodes contributed
 
     @classmethod
     def create_root(cls, content: str) -> CanvasNode:
@@ -83,6 +88,24 @@ class CanvasNode:
             content_compressed=_compress(content),
             content_full=content,
             parent_id=parent_id,
+        )
+
+    @classmethod
+    def create_plan(
+        cls,
+        content: str,
+        parent_id: str,
+        source_ids: list[str],
+    ) -> CanvasNode:
+        """create a plan node synthesized from multiple sources."""
+        return cls(
+            id=_generate_id(),
+            type=NodeType.PLAN,
+            operation="plan",
+            content_compressed=_compress(content),
+            content_full=content,
+            parent_id=parent_id,
+            source_ids=source_ids,
         )
 
     def update_content(self, new_content: str, compress_length: int = DEFAULT_COMPRESSION_LENGTH) -> None:

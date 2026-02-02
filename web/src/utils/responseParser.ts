@@ -279,24 +279,44 @@ function parseDivergeOutput(content: string): ParsedResponse {
 
 /**
  * Parse @askuserquestions output
- * Expected format: Numbered questions with "Why this matters" explanations
+ * Expected format: Numbered questions with options and "Why this matters" explanations
  */
 function parseAskUserQuestionsOutput(content: string): ParsedResponse {
   const subsections: Subsection[] = [];
 
-  // Match numbered questions: "**N. Question?**" followed by "*Why this matters:* explanation"
-  const questionPattern = /\*\*(\d+)\.\s*([^*]+\?)\s*\*\*\s*(?:\n\s*\*Why this matters:\*\s*([\s\S]*?))?(?=\*\*\d+\.|$)/g;
+  // Split content by question numbers
+  const questionBlocks = content.split(/(?=\*\*\d+\.)/);
 
-  let match;
-  while ((match = questionPattern.exec(content)) !== null) {
-    const question = match[2].trim();
-    const explanation = match[3]?.trim() || '';
+  for (const block of questionBlocks) {
+    if (!block.trim()) continue;
+
+    // Extract question title
+    const titleMatch = block.match(/\*\*(\d+)\.\s*([^*\n]+\??)\s*\*\*/);
+    if (!titleMatch) continue;
+
+    const question = titleMatch[2].trim();
+
+    // Extract options (checkbox format: - [ ] Option or bullet format: - Option)
+    const options: string[] = [];
+    const optionMatches = block.matchAll(/^[\s]*[-*]\s*(?:\[[\s]*\])?\s*(.+?)$/gm);
+    for (const optMatch of optionMatches) {
+      const opt = optMatch[1].trim();
+      // Skip "Why this matters" and other non-option lines
+      if (opt && !opt.startsWith('*') && !opt.toLowerCase().startsWith('why this matters')) {
+        options.push(opt);
+      }
+    }
+
+    // Extract "Why this matters" explanation
+    const explanationMatch = block.match(/\*Why this matters:\*\s*([\s\S]*?)(?=\*\*\d+\.|$)/i);
+    const explanation = explanationMatch ? explanationMatch[1].trim() : '';
 
     subsections.push({
       id: generateId(),
       type: 'question',
       title: question,
       content: explanation,
+      options: options.length > 0 ? options : undefined,
       importance: detectImportance(question + ' ' + explanation),
       collapsed: false,
     });
@@ -306,6 +326,7 @@ function parseAskUserQuestionsOutput(content: string): ParsedResponse {
   if (subsections.length === 0) {
     const numberedPattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+\?)\*?\*?(?:[:\s]*\n|\s*:\s*)([\s\S]*?)(?=\n\d+\.|$)/g;
 
+    let match;
     while ((match = numberedPattern.exec(content)) !== null) {
       const question = match[2].trim();
       const explanation = match[3].trim();

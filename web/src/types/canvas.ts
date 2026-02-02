@@ -2,13 +2,15 @@
 
 export interface CanvasNode {
   id: string;
-  type: 'root' | 'operation' | 'user';
+  type: 'root' | 'operation' | 'user' | 'plan';
   content_full: string;
   content_compressed: string;
   operation: string | null;
   parent_id: string | null;
   children_ids: string[];
   links_to: string[];
+  excluded: boolean;
+  source_ids: string[];
 }
 
 export interface Canvas {

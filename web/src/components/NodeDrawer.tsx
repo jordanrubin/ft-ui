@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import type { CanvasNode, SkillInfo } from '../types/canvas';
 import SubsectionViewer from './SubsectionViewer';
 import { isStructuredResponse } from '../utils/responseParser';
+import { Markdown } from '../utils/markdown';
 
 interface NodeDrawerProps {
   node: CanvasNode | null;
+  parentNode: CanvasNode | null;
   skills: SkillInfo[];
   onClose: () => void;
   onSkillRun: (skillName: string) => void;
@@ -13,6 +15,9 @@ interface NodeDrawerProps {
   onNodeEdit: (content: string) => void;
   onNodeDelete: () => void;
   onLinkCreate: (targetId: string) => void;
+  onToggleExclude: () => void;
+  onAnswerSave?: (nodeId: string, answers: Record<string, string>) => void;
+  onSubsectionSelect?: (content: string | undefined) => void;
   linkedNodes: CanvasNode[];
   backlinks: CanvasNode[];
   isRunning: boolean;
@@ -24,6 +29,7 @@ interface NodeDrawerProps {
 
 export default function NodeDrawer({
   node,
+  parentNode,
   skills,
   onClose,
   onSkillRun,
@@ -32,6 +38,9 @@ export default function NodeDrawer({
   onNodeEdit,
   onNodeDelete,
   onLinkCreate,
+  onToggleExclude,
+  onAnswerSave,
+  onSubsectionSelect,
   linkedNodes,
   backlinks,
   isRunning,
@@ -45,6 +54,7 @@ export default function NodeDrawer({
   const [chatInput, setChatInput] = useState('');
   const [linkInput, setLinkInput] = useState('');
   const [activeTab, setActiveTab] = useState<'content' | 'skills' | 'links'>('content');
+  const [showFullParent, setShowFullParent] = useState(false);
 
   const hasMultiSelection = selectedNodeIds.size > 0;
   const selectedNodes = Array.from(selectedNodeIds).map((id) => allNodes[id]).filter(Boolean);
@@ -262,32 +272,99 @@ export default function NodeDrawer({
               display: 'inline-block',
               padding: '4px 10px',
               borderRadius: '4px',
-              background: node.operation ? '#0f3460' : '#3a3a3a',
+              background: node.excluded ? '#7f1d1d' : (node.operation ? '#0f3460' : '#3a3a3a'),
               color: '#fff',
               fontSize: '12px',
               fontWeight: 600,
             }}
           >
-            {node.operation || node.type}
+            {node.excluded && '✗ '}{node.operation || node.type}
           </span>
           <span style={{ marginLeft: '8px', color: '#666', fontSize: '12px' }}>
             {node.id}
           </span>
         </div>
-        <button
-          onClick={onClose}
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          {node.type !== 'root' && (
+            <button
+              onClick={onToggleExclude}
+              title={node.excluded ? 'Include in plan' : 'Exclude from plan'}
+              style={{
+                background: node.excluded ? '#7f1d1d' : '#21262d',
+                border: '1px solid #30363d',
+                color: node.excluded ? '#fca5a5' : '#8b949e',
+                fontSize: '12px',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '4px',
+              }}
+            >
+              {node.excluded ? 'Excluded' : 'Exclude'}
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#666',
+              fontSize: '24px',
+              cursor: 'pointer',
+              padding: '4px 8px',
+            }}
+          >
+            ×
+          </button>
+        </div>
+      </div>
+
+      {/* Context: what this was run on */}
+      {parentNode && node.type === 'operation' && (
+        <div
           style={{
-            background: 'none',
-            border: 'none',
-            color: '#666',
-            fontSize: '24px',
-            cursor: 'pointer',
-            padding: '4px 8px',
+            padding: '12px 16px',
+            background: '#0d1117',
+            borderBottom: '1px solid #30363d',
           }}
         >
-          ×
-        </button>
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '4px',
+            }}
+          >
+            <span style={{ fontSize: '11px', color: '#666' }}>Run on:</span>
+            <button
+              onClick={() => setShowFullParent(!showFullParent)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#58a6ff',
+                fontSize: '11px',
+                cursor: 'pointer',
+                padding: '2px 6px',
+              }}
+            >
+              {showFullParent ? '▼ collapse' : '▶ expand'}
+            </button>
+          </div>
+          <div
+            style={{
+              fontSize: '13px',
+              color: '#8b949e',
+              lineHeight: '1.4',
+              maxHeight: showFullParent ? 'none' : '60px',
+              overflow: showFullParent ? 'auto' : 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: showFullParent ? 'pre-wrap' : 'normal',
+            }}
+          >
+            {showFullParent ? parentNode.content_full : parentNode.content_compressed}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid #30363d' }}>
@@ -380,6 +457,8 @@ export default function NodeDrawer({
                     node={node}
                     skills={skills}
                     onSkillRunOnSelection={onSkillRunOnSelection}
+                    onAnswerSave={onAnswerSave}
+                    onSubsectionSelect={onSubsectionSelect}
                     isRunning={isRunning}
                   />
                 ) : (
@@ -391,12 +470,11 @@ export default function NodeDrawer({
                       color: '#e0e0e0',
                       fontSize: '14px',
                       lineHeight: '1.6',
-                      whiteSpace: 'pre-wrap',
                       maxHeight: '300px',
                       overflow: 'auto',
                     }}
                   >
-                    {node.content_full}
+                    <Markdown content={node.content_full} />
                   </div>
                 )}
                 <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>

@@ -35,6 +35,8 @@ export interface Subsection {
   assumptions?: string[];
   children?: Subsection[];
   collapsed?: boolean;
+  answer?: string;  // user's response to questions or decisions
+  options?: string[];  // multiple choice options for questions
 }
 
 export interface ParsedResponse {

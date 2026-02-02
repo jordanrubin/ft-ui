@@ -19,12 +19,20 @@ generate questions that surface ambiguity, missing requirements, and hidden assu
 
 produce 3-7 numbered questions, each with:
 - a clear, specific question
+- 2-4 suggested options (when applicable)
 - brief context explaining why this matters for planning
 
 format each question as:
 
 **N. [Question]**
+- [ ] Option A
+- [ ] Option B
+- [ ] Option C
+- [ ] Other: ___
+
 *Why this matters:* [brief explanation of how the answer affects planning]
+
+for open-ended questions where options don't make sense, omit the options list.
 
 ## question categories to consider
 

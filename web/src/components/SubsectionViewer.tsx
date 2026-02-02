@@ -7,6 +7,8 @@ interface SubsectionViewerProps {
   node: CanvasNode;
   skills: SkillInfo[];
   onSkillRunOnSelection: (skillName: string, content: string) => void;
+  onAnswerSave?: (nodeId: string, answers: Record<string, string>) => void;
+  onSubsectionSelect?: (content: string | undefined) => void;
   isRunning: boolean;
 }
 
@@ -14,21 +16,63 @@ export default function SubsectionViewer({
   node,
   skills,
   onSkillRunOnSelection,
+  onAnswerSave,
+  onSubsectionSelect,
   isRunning,
 }: SubsectionViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+
+  // Load answers from localStorage on mount
+  const storageKey = `rf-answers-${node.id}`;
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
 
   // Parse the response content
   const parsedResponse = useMemo((): ParsedResponse => {
     return parseSkillResponse(node.content_full, node.operation);
   }, [node.content_full, node.operation]);
 
+  // Handle answer updates - save to localStorage
+  const handleAnswer = (subsectionId: string, answer: string) => {
+    const newAnswers = { ...answers, [subsectionId]: answer };
+    setAnswers(newAnswers);
+    localStorage.setItem(storageKey, JSON.stringify(newAnswers));
+    if (onAnswerSave) {
+      onAnswerSave(node.id, newAnswers);
+    }
+  };
+
+  // Merge answers into subsections for display
+  const subsectionsWithAnswers = useMemo(() => {
+    return parsedResponse.subsections.map(sub => ({
+      ...sub,
+      answer: answers[sub.id] || sub.answer,
+    }));
+  }, [parsedResponse.subsections, answers]);
+
   // Check if we have meaningful structure to display
   const hasContent = parsedResponse.mainContent != null || parsedResponse.subsections.length > 0;
 
   const handleSelect = (id: string) => {
-    setSelectedId(selectedId === id ? null : id);
+    const newId = selectedId === id ? null : id;
+    setSelectedId(newId);
+    // Notify parent of selection change
+    if (onSubsectionSelect) {
+      if (newId) {
+        const sub = subsectionsWithAnswers.find(s => s.id === newId);
+        const content = sub ? (sub.content ? `${sub.title}\n\n${sub.content}` : sub.title) : undefined;
+        onSubsectionSelect(content);
+      } else {
+        onSubsectionSelect(undefined);
+      }
+    }
   };
 
   const handleSkillRun = (skillName: string, content: string) => {
@@ -51,6 +95,8 @@ export default function SubsectionViewer({
         return 'FAILURE MODES — CLICK TO SELECT';
       case 'dimension':
         return 'DIMENSIONS — CLICK TO SELECT';
+      case 'question':
+        return 'QUESTIONS — ANSWER BELOW';
       default:
         return null; // Don't show a label for generic content
     }
@@ -175,7 +221,7 @@ export default function SubsectionViewer({
                     key={skill.name}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleSkillRun(skill.name, parsedResponse.mainContent!.content);
+                      handleSkillRun(skill.name, `${parsedResponse.mainContent!.title}\n\n${parsedResponse.mainContent!.content}`);
                     }}
                     disabled={isRunning}
                     style={{
@@ -231,13 +277,14 @@ export default function SubsectionViewer({
 
       {/* Subsection cards */}
       <div>
-        {parsedResponse.subsections.map((subsection) => (
+        {subsectionsWithAnswers.map((subsection) => (
           <SubsectionCard
             key={subsection.id}
             subsection={subsection}
             isSelected={selectedId === subsection.id}
             onSelect={handleSelect}
             onSkillRun={handleSkillRun}
+            onAnswer={handleAnswer}
             skills={skills}
           />
         ))}

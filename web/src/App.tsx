@@ -3,8 +3,9 @@ import { ReactFlowProvider } from '@xyflow/react';
 
 import CanvasView from './components/CanvasView';
 import NodeDrawer from './components/NodeDrawer';
+import SkillsPane from './components/SkillsPane';
 import Login from './components/Login';
-import { canvasApi, nodeApi, skillApi, linkApi, templateApi } from './api/client';
+import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
 import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem } from './types/canvas';
 
 export default function App() {
@@ -22,6 +23,13 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [planFiles, setPlanFiles] = useState<PlanFileInfo[]>([]);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [showCanvasPicker, setShowCanvasPicker] = useState(false);
+  const [selectedSubsectionContent, setSelectedSubsectionContent] = useState<string | undefined>();
+
+  // Sidebar shows skills pane when a node is selected
+  const showSkillsPane = selectedNode !== null;
 
   // Load initial data
   useEffect(() => {
@@ -30,10 +38,12 @@ export default function App() {
       templateApi.list().catch(() => []),
       canvasApi.list().catch(() => []),
       canvasApi.get().catch(() => null),
-    ]).then(([skills, templates, list, currentCanvas]) => {
+      planFileApi.list().catch(() => []),
+    ]).then(([skills, templates, list, currentCanvas, plans]) => {
       setSkills(skills);
       setTemplates(templates);
       setCanvasList(list);
+      setPlanFiles(plans);
       if (currentCanvas) {
         setCanvas(currentCanvas);
       }
@@ -243,6 +253,47 @@ export default function App() {
     [selectedNode, refreshCanvas]
   );
 
+  const handleToggleExclude = useCallback(async () => {
+    if (!selectedNode) return;
+    try {
+      const result = await nodeApi.toggleExclude(selectedNode.id);
+      // Update local state
+      setSelectedNode({ ...selectedNode, excluded: result.excluded });
+      await refreshCanvas();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Toggle exclude failed');
+    }
+  }, [selectedNode, refreshCanvas]);
+
+  const handleSynthesizePlan = useCallback(async () => {
+    setIsRunning(true);
+    setError(null);
+    try {
+      // Gather all answers from localStorage
+      const allAnswers: Record<string, Record<string, string>> = {};
+      if (canvas) {
+        for (const nodeId of Object.keys(canvas.nodes)) {
+          const stored = localStorage.getItem(`rf-answers-${nodeId}`);
+          if (stored) {
+            try {
+              allAnswers[nodeId] = JSON.parse(stored);
+            } catch {
+              // ignore invalid JSON
+            }
+          }
+        }
+      }
+
+      const planNode = await planApi.synthesize(undefined, true, allAnswers);
+      await refreshCanvas();
+      setSelectedNode(planNode);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Plan synthesis failed');
+    } finally {
+      setIsRunning(false);
+    }
+  }, [refreshCanvas, canvas]);
+
   const handleCreateCanvas = useCallback(async () => {
     const name = prompt('Canvas name:');
     const goal = prompt('What are you trying to build?');
@@ -262,8 +313,23 @@ export default function App() {
       const loaded = await canvasApi.load(path);
       setCanvas(loaded);
       setSelectedNode(null);
+      setShowCanvasPicker(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Load failed');
+    }
+  }, []);
+
+  const handleLoadFromPlan = useCallback(async (planPath: string, planName: string) => {
+    try {
+      const newCanvas = await canvasApi.createFromPlan(planPath, planName);
+      setCanvas(newCanvas);
+      setSelectedNode(null);
+      setShowPlanPicker(false);
+      // Refresh canvas list
+      const list = await canvasApi.list();
+      setCanvasList(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Load from plan failed');
     }
   }, []);
 
@@ -326,10 +392,41 @@ export default function App() {
           <div style={{ padding: '16px', borderBottom: '1px solid #30363d' }}>
             <h1 style={{ margin: 0, fontSize: '18px', color: '#fff' }}>Runeforge Canvas</h1>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-              reasoning-as-graph
+              {showSkillsPane ? 'run skills' : 'reasoning-as-graph'}
             </p>
           </div>
 
+          {/* Skills Pane - shown when node is selected */}
+          {showSkillsPane && selectedNode && (
+            <SkillsPane
+              node={selectedNode}
+              skills={skills}
+              selectedContent={selectedSubsectionContent}
+              onRunSkill={async (skillName, content) => {
+                if (skillName.startsWith('chat:')) {
+                  // Freeform chat
+                  const prompt = skillName.slice(5);
+                  await handleChatSubmit(prompt);
+                } else {
+                  // Regular skill
+                  if (content) {
+                    await handleSkillRunOnSelection(skillName, content);
+                  } else {
+                    await handleSkillRun(skillName);
+                  }
+                }
+              }}
+              onClose={() => {
+                setSelectedNode(null);
+                setSelectedSubsectionContent(undefined);
+              }}
+              isRunning={isRunning}
+            />
+          )}
+
+          {/* Canvas operations - shown when no node selected */}
+          {!showSkillsPane && (
+            <>
           {/* Actions */}
           <div style={{ padding: '12px', borderBottom: '1px solid #30363d' }}>
             <button
@@ -348,7 +445,107 @@ export default function App() {
             >
               + New Canvas
             </button>
+            {planFiles.length > 0 && (
+              <button
+                onClick={() => setShowPlanPicker(!showPlanPicker)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  marginTop: '8px',
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                }}
+              >
+                Load from Plan
+              </button>
+            )}
+            {canvasList.length > 0 && (
+              <button
+                onClick={() => setShowCanvasPicker(!showCanvasPicker)}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  marginTop: '8px',
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                }}
+              >
+                Load Saved Canvas
+              </button>
+            )}
           </div>
+
+          {/* Plan Picker */}
+          {showPlanPicker && planFiles.length > 0 && (
+            <div style={{ padding: '12px', borderBottom: '1px solid #30363d', background: '#0d1117' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>
+                ~/.claude/plans/ (creates new canvas)
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflow: 'auto' }}>
+                {planFiles.map((plan) => (
+                  <button
+                    key={plan.path}
+                    onClick={() => handleLoadFromPlan(plan.path, plan.name)}
+                    style={{
+                      padding: '10px',
+                      background: '#21262d',
+                      border: '1px solid #30363d',
+                      borderRadius: '6px',
+                      color: '#c9d1d9',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 500, marginBottom: '2px' }}>{plan.name}.md</div>
+                    <div style={{ fontSize: '11px', color: '#666' }}>
+                      {new Date(plan.modified_at).toLocaleDateString()}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Canvas Picker */}
+          {showCanvasPicker && canvasList.length > 0 && (
+            <div style={{ padding: '12px', borderBottom: '1px solid #30363d', background: '#0d1117' }}>
+              <h3 style={{ margin: '0 0 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>
+                ~/.runeforge-canvas/ (load existing)
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflow: 'auto' }}>
+                {canvasList.map((c) => (
+                  <button
+                    key={c.path}
+                    onClick={() => handleLoadCanvas(c.path)}
+                    style={{
+                      padding: '10px',
+                      background: canvas?.name === c.name ? '#238636' : '#21262d',
+                      border: '1px solid #30363d',
+                      borderRadius: '6px',
+                      color: '#c9d1d9',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                    }}
+                  >
+                    <div style={{ fontWeight: 500, marginBottom: '2px' }}>{c.path.split('/').pop()}</div>
+                    <div style={{ fontSize: '11px', color: '#8b949e' }}>
+                      {c.node_count} nodes · {new Date(c.modified_at).toLocaleDateString()}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Undo/Redo */}
           {canvas && (
@@ -385,6 +582,33 @@ export default function App() {
               >
                 Redo
               </button>
+            </div>
+          )}
+
+          {/* Synthesize Plan */}
+          {canvas && (
+            <div style={{ padding: '8px 12px', borderBottom: '1px solid #30363d' }}>
+              <button
+                onClick={handleSynthesizePlan}
+                disabled={isRunning}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: '#8b5cf6',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  cursor: isRunning ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  opacity: isRunning ? 0.6 : 1,
+                }}
+              >
+                {isRunning ? 'Synthesizing...' : 'Synthesize Plan'}
+              </button>
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#666' }}>
+                Collapse all thinking into a Claude Code plan
+              </p>
             </div>
           )}
 
@@ -428,6 +652,8 @@ export default function App() {
               <br />
               {Object.keys(canvas.nodes).length} nodes
             </div>
+          )}
+            </>
           )}
         </div>
       )}
@@ -541,6 +767,7 @@ export default function App() {
       {(selectedNode || selectedNodeIds.size > 0) && (
         <NodeDrawer
           node={selectedNode}
+          parentNode={selectedNode.parent_id && canvas ? canvas.nodes[selectedNode.parent_id] || null : null}
           skills={skills}
           onClose={handleCloseDrawer}
           onSkillRun={handleSkillRun}
@@ -549,6 +776,8 @@ export default function App() {
           onNodeEdit={handleNodeEdit}
           onNodeDelete={handleNodeDelete}
           onLinkCreate={handleLinkCreate}
+          onToggleExclude={handleToggleExclude}
+          onSubsectionSelect={setSelectedSubsectionContent}
           linkedNodes={linkedNodes}
           backlinks={backlinks}
           isRunning={isRunning}

@@ -67,6 +67,25 @@ export const canvasApi = {
   exportMermaid: () => fetch(`${API_BASE}/canvas/export/mermaid`).then(r => r.text()),
   exportOutline: () => fetch(`${API_BASE}/canvas/export/outline`).then(r => r.text()),
   exportJson: () => request<object>('/canvas/export/json'),
+
+  // Create from plan
+  createFromPlan: (planPath: string, canvasName?: string) =>
+    request<Canvas>('/canvas/from-plan', {
+      method: 'POST',
+      body: JSON.stringify({ plan_path: planPath, canvas_name: canvasName }),
+    }),
+};
+
+// Plan file operations
+export interface PlanFileInfo {
+  name: string;
+  path: string;
+  modified_at: string;
+  size_bytes: number;
+}
+
+export const planFileApi = {
+  list: () => request<PlanFileInfo[]>('/plans'),
 };
 
 // Node operations
@@ -105,6 +124,12 @@ export const nodeApi = {
   // Links
   getLinks: (nodeId: string) => request<CanvasNode[]>(`/node/${nodeId}/links`),
   getBacklinks: (nodeId: string) => request<CanvasNode[]>(`/node/${nodeId}/backlinks`),
+
+  // Exclusion for plan synthesis
+  toggleExclude: (nodeId: string) =>
+    request<{ node_id: string; excluded: boolean }>(`/node/${nodeId}/toggle-exclude`, {
+      method: 'POST',
+    }),
 };
 
 // Link operations
@@ -153,6 +178,19 @@ export const skillApi = {
     request<CanvasNode>('/chat/run', {
       method: 'POST',
       body: JSON.stringify({ prompt, node_id: nodeId }),
+    }),
+};
+
+// Plan operations
+export const planApi = {
+  synthesize: (
+    goal?: string,
+    saveToClaude: boolean = true,
+    answers: Record<string, Record<string, string>> = {}
+  ) =>
+    request<CanvasNode>('/canvas/synthesize-plan', {
+      method: 'POST',
+      body: JSON.stringify({ goal, save_to_claude: saveToClaude, answers }),
     }),
 };
 

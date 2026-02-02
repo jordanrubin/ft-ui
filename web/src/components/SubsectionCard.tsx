@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import type { Subsection, SkillInfo } from '../types';
+import type { Subsection } from '../types';
 
 interface SubsectionCardProps {
   subsection: Subsection;
   isSelected: boolean;
   onSelect: (id: string) => void;
-  onSkillRun?: (skillName: string, content: string) => void;
-  skills?: SkillInfo[];
+  onAnswer?: (id: string, answer: string) => void;
 }
 
 // Tag styling based on type
@@ -23,21 +22,16 @@ export default function SubsectionCard({
   subsection,
   isSelected,
   onSelect,
-  onSkillRun,
-  skills = [],
+  onAnswer,
 }: SubsectionCardProps) {
   const [showAssumptions, setShowAssumptions] = useState(false);
+  const [answerText, setAnswerText] = useState(subsection.answer || '');
+  const [isAnswering, setIsAnswering] = useState(false);
+
+  const isQuestion = subsection.type === 'question';
 
   const handleClick = () => {
     onSelect(subsection.id);
-  };
-
-  const handleSkillClick = (skillName: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onSkillRun) {
-      const content = subsection.content || subsection.title;
-      onSkillRun(skillName, content);
-    }
   };
 
   // Get tag style
@@ -217,49 +211,173 @@ export default function SubsectionCard({
             )}
           </div>
         )}
+
+        {/* Answer section for questions */}
+        {isQuestion && (
+          <div style={{ marginTop: '12px' }}>
+            {subsection.answer && !isAnswering ? (
+              <div style={{
+                padding: '10px 12px',
+                background: '#ecfdf5',
+                border: '1px solid #a7f3d0',
+                borderRadius: '6px',
+              }}>
+                <div style={{ fontSize: '11px', color: '#047857', fontWeight: 600, marginBottom: '4px' }}>
+                  YOUR ANSWER:
+                </div>
+                <div style={{ fontSize: '14px', color: '#065f46', lineHeight: 1.5 }}>
+                  {subsection.answer}
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsAnswering(true);
+                  }}
+                  style={{
+                    marginTop: '8px',
+                    padding: '4px 8px',
+                    background: 'transparent',
+                    border: '1px solid #a7f3d0',
+                    borderRadius: '4px',
+                    color: '#047857',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Edit
+                </button>
+              </div>
+            ) : (
+              <div onClick={(e) => e.stopPropagation()}>
+                {/* Multiple choice options */}
+                {subsection.options && subsection.options.length > 0 && (
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                      Select an option:
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {subsection.options.map((option, i) => {
+                        const isSelected = answerText === option;
+                        return (
+                          <button
+                            key={i}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAnswerText(option);
+                            }}
+                            style={{
+                              padding: '10px 14px',
+                              background: isSelected ? '#ecfdf5' : '#f9fafb',
+                              border: isSelected ? '2px solid #10b981' : '1px solid #e5e7eb',
+                              borderRadius: '8px',
+                              color: isSelected ? '#065f46' : '#374151',
+                              fontSize: '14px',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                            }}
+                          >
+                            <span style={{
+                              width: '18px',
+                              height: '18px',
+                              borderRadius: '50%',
+                              border: isSelected ? '2px solid #10b981' : '2px solid #d1d5db',
+                              background: isSelected ? '#10b981' : 'transparent',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              flexShrink: 0,
+                            }}>
+                              {isSelected && (
+                                <span style={{ color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>✓</span>
+                              )}
+                            </span>
+                            {option}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{
+                      fontSize: '12px',
+                      color: '#9ca3af',
+                      marginTop: '10px',
+                      borderTop: '1px solid #e5e7eb',
+                      paddingTop: '10px',
+                    }}>
+                      Or write your own answer:
+                    </div>
+                  </div>
+                )}
+
+                {/* Freetext input */}
+                <textarea
+                  value={answerText}
+                  onChange={(e) => setAnswerText(e.target.value)}
+                  placeholder={subsection.options?.length ? "Type a custom answer..." : "Type your answer here..."}
+                  style={{
+                    width: '100%',
+                    minHeight: subsection.options?.length ? '40px' : '60px',
+                    padding: '10px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    lineHeight: 1.5,
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                  }}
+                />
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onAnswer && answerText.trim()) {
+                        onAnswer(subsection.id, answerText.trim());
+                        setIsAnswering(false);
+                      }
+                    }}
+                    disabled={!answerText.trim()}
+                    style={{
+                      padding: '6px 12px',
+                      background: answerText.trim() ? '#059669' : '#9ca3af',
+                      border: 'none',
+                      borderRadius: '4px',
+                      color: '#fff',
+                      fontSize: '13px',
+                      cursor: answerText.trim() ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    Save Answer
+                  </button>
+                  {subsection.answer && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAnswerText(subsection.answer || '');
+                        setIsAnswering(false);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        background: '#f3f4f6',
+                        border: '1px solid #d1d5db',
+                        borderRadius: '4px',
+                        color: '#374151',
+                        fontSize: '13px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Skill action buttons (shown when selected) */}
-      {isSelected && skills.length > 0 && (
-        <div style={{
-          padding: '12px 16px',
-          borderTop: '1px solid #f3f4f6',
-          background: '#fafafa',
-          borderRadius: '0 0 12px 12px',
-        }}>
-          <div style={{
-            fontSize: '12px',
-            color: '#71717a',
-            marginBottom: '10px',
-            fontWeight: 500,
-          }}>
-            Run skill on this:
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {skills.map((skill) => (
-              <button
-                key={skill.name}
-                onClick={(e) => handleSkillClick(skill.name, e)}
-                style={{
-                  padding: '8px 14px',
-                  background: '#18181b',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'background 0.15s ease',
-                }}
-                onMouseOver={(e) => (e.currentTarget.style.background = '#27272a')}
-                onMouseOut={(e) => (e.currentTarget.style.background = '#18181b')}
-              >
-                {skill.display_name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

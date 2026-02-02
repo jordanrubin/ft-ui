@@ -6,6 +6,7 @@ exposes core operations as REST endpoints for react frontend.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -107,6 +108,8 @@ class NodeResponse(BaseModel):
     parent_id: Optional[str]
     children_ids: list[str]
     links_to: list[str]
+    excluded: bool = False
+    source_ids: list[str] = []
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
@@ -119,6 +122,8 @@ class NodeResponse(BaseModel):
             parent_id=node.parent_id,
             children_ids=node.children_ids,
             links_to=node.links_to,
+            excluded=node.excluded,
+            source_ids=node.source_ids,
         )
 
 
@@ -207,6 +212,14 @@ class AppState:
                 parts.append(node.content_full)
         return "\n\n---\n\n".join(parts)
 
+    def auto_save(self) -> None:
+        """auto-save canvas after each mutation."""
+        if self.canvas and self.canvas_path:
+            try:
+                self.canvas.save(self.canvas_path)
+            except Exception as e:
+                print(f"auto-save failed: {e}")
+
 
 state = AppState()
 
@@ -266,6 +279,66 @@ async def create_canvas(req: CanvasCreate):
     state.canvas = Canvas(name=req.name)
     root = CanvasNode.create_root(req.root_content)
     state.canvas.add_node(root)
+    # set new canvas_path so we don't overwrite old canvas
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in req.name)
+    state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+    state.auto_save()
+    return CanvasResponse.from_canvas(state.canvas)
+
+
+class PlanFileInfo(BaseModel):
+    """info about a plan file."""
+    name: str
+    path: str
+    modified_at: str
+    size_bytes: int
+
+
+@app.get("/plans", response_model=list[PlanFileInfo])
+async def list_plan_files():
+    """list available plan files from ~/.claude/plans/."""
+    plans_dir = Path.home() / ".claude" / "plans"
+    if not plans_dir.exists():
+        return []
+
+    plans = []
+    for f in plans_dir.glob("*.md"):
+        stat = f.stat()
+        plans.append(PlanFileInfo(
+            name=f.stem,
+            path=str(f),
+            modified_at=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            size_bytes=stat.st_size,
+        ))
+
+    # sort by modified time, newest first
+    plans.sort(key=lambda p: p.modified_at, reverse=True)
+    return plans
+
+
+class CanvasFromPlan(BaseModel):
+    """request to create canvas from a plan file."""
+    plan_path: str
+    canvas_name: Optional[str] = None  # defaults to plan filename
+
+
+@app.post("/canvas/from-plan", response_model=CanvasResponse)
+async def create_canvas_from_plan(req: CanvasFromPlan):
+    """create a new canvas from an existing markdown plan file."""
+    plan_path = Path(req.plan_path).expanduser()
+    if not plan_path.exists():
+        raise HTTPException(status_code=404, detail=f"plan file not found: {req.plan_path}")
+
+    content = plan_path.read_text()
+    name = req.canvas_name or plan_path.stem
+
+    state.canvas = Canvas(name=name)
+    root = CanvasNode.create_root(content)
+    state.canvas.add_node(root)
+    # set new canvas_path so we don't overwrite old canvas
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in name)
+    state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+    state.auto_save()
     return CanvasResponse.from_canvas(state.canvas)
 
 
@@ -321,6 +394,7 @@ async def create_node(req: NodeCreate):
 
     state.canvas.add_node(node)
     state.canvas.set_focus(node.id)
+    state.auto_save()
     return NodeResponse.from_node(node)
 
 
@@ -334,6 +408,7 @@ async def delete_node(node_id: str):
     if new_focus is None and node_id == state.canvas.root_id:
         raise HTTPException(status_code=400, detail="cannot delete root node")
 
+    state.auto_save()
     return {"deleted": node_id, "new_focus": new_focus}
 
 
@@ -381,6 +456,7 @@ async def run_skill(req: SkillRun):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.auto_save()
 
     return NodeResponse.from_node(new_node)
 
@@ -399,26 +475,17 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
     if not focus:
         raise HTTPException(status_code=404, detail=f"node not found: {req.node_id}")
 
-    # Build context from selected content only
-    # Include some parent context for grounding but focus on selected content
-    context_nodes = state.canvas.get_context_for_operation(focus.id)
-    parent_context = state.format_context(context_nodes[:-1]) if len(context_nodes) > 1 else ""
+    # Build prompt focused on selected content only
+    # Parent context is available but the skill should target the selection
+    focus_directive = f"""<directive>
+FOCUS: Apply this skill ONLY to the selected content below. Do not analyze the parent context - it is provided only for background understanding. Your response should be about the selection, not the broader document.
+</directive>
 
-    # Build prompt with selected content as primary input
-    selection_context = f"""<selection source="subsection of {focus.operation or 'node'}">
+<selection>
 {req.selected_content}
 </selection>"""
 
-    if parent_context:
-        full_context = f"""<parent_context>
-{parent_context}
-</parent_context>
-
-{selection_context}"""
-    else:
-        full_context = selection_context
-
-    prompt = skill.build_prompt(full_context, req.params)
+    prompt = skill.build_prompt(focus_directive, req.params)
     result = await state.client.complete(prompt)
 
     # create result node
@@ -430,6 +497,7 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.auto_save()
 
     return NodeResponse.from_node(new_node)
 
@@ -522,6 +590,7 @@ async def run_chain(req: ChainRun):
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.auto_save()
 
     return NodeResponse.from_node(new_node)
 
@@ -562,6 +631,7 @@ respond thoughtfully to the user's question about this context. be specific and 
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
+    state.auto_save()
 
     return NodeResponse.from_node(new_node)
 
@@ -622,6 +692,7 @@ async def undo():
     if not state.canvas.undo():
         raise HTTPException(status_code=400, detail="nothing to undo")
 
+    state.auto_save()
     return CanvasResponse.from_canvas(state.canvas)
 
 
@@ -634,6 +705,7 @@ async def redo():
     if not state.canvas.redo():
         raise HTTPException(status_code=400, detail="nothing to redo")
 
+    state.auto_save()
     return CanvasResponse.from_canvas(state.canvas)
 
 
@@ -648,6 +720,7 @@ async def edit_node(node_id: str, req: NodeEdit):
     if not state.canvas.edit_node(node_id, req.content):
         raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
 
+    state.auto_save()
     return NodeResponse.from_node(state.canvas.nodes[node_id])
 
 
@@ -710,6 +783,7 @@ async def add_link(req: LinkRequest):
     if not state.canvas.add_link(req.from_id, req.to_id):
         raise HTTPException(status_code=400, detail="could not add link (invalid nodes or already linked)")
 
+    state.auto_save()
     return NodeResponse.from_node(state.canvas.nodes[req.from_id])
 
 
@@ -722,6 +796,7 @@ async def remove_link(from_id: str, to_id: str):
     if not state.canvas.remove_link(from_id, to_id):
         raise HTTPException(status_code=400, detail="could not remove link")
 
+    state.auto_save()
     return {"removed": True}
 
 
@@ -793,6 +868,160 @@ async def export_json():
         raise HTTPException(status_code=404, detail="no canvas loaded")
 
     return state.canvas.to_dict()
+
+
+# --- node exclusion endpoint ---
+
+@app.post("/node/{node_id}/toggle-exclude")
+async def toggle_exclude(node_id: str):
+    """toggle whether a node is excluded from plan synthesis."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    node = state.canvas.nodes.get(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail=f"node not found: {node_id}")
+
+    node.excluded = not node.excluded
+    state.auto_save()
+    return {"node_id": node_id, "excluded": node.excluded}
+
+
+# --- plan synthesis endpoint ---
+
+class PlanRequest(BaseModel):
+    """request to synthesize a plan."""
+    goal: Optional[str] = None  # override goal, else use root content
+    save_to_claude: bool = True  # save to ~/.claude/plans/
+    answers: dict[str, dict[str, str]] = {}  # node_id -> {subsection_id: answer}
+
+
+@app.post("/canvas/synthesize-plan", response_model=NodeResponse)
+async def synthesize_plan(req: PlanRequest):
+    """synthesize all canvas thinking into a concrete Claude Code plan."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    source_ids: list[str] = []
+
+    # gather all canvas content, skipping excluded nodes
+    def gather_branch(node_id: str, depth: int = 0) -> str:
+        node = state.canvas.nodes.get(node_id)
+        if not node or node.excluded:
+            return ""
+
+        source_ids.append(node_id)
+
+        indent = "  " * depth
+        label = f"[{node.operation}]" if node.operation else f"[{node.type.value}]"
+        content = node.content_full[:500] + "..." if len(node.content_full) > 500 else node.content_full
+
+        lines = [f"{indent}{label}\n{indent}{content}"]
+
+        # Include any user answers for this node
+        if node_id in req.answers:
+            node_answers = req.answers[node_id]
+            if node_answers:
+                answer_text = "\n".join([f"    [USER ANSWER] {q}: {a}" for q, a in node_answers.items()])
+                lines.append(f"{indent}  USER RESPONSES:\n{answer_text}")
+
+        for child_id in node.children_ids:
+            child_content = gather_branch(child_id, depth + 1)
+            if child_content:
+                lines.append(child_content)
+        return "\n\n".join(lines)
+
+    root = state.canvas.nodes.get(state.canvas.root_id)
+    if not root:
+        raise HTTPException(status_code=400, detail="canvas has no root")
+
+    full_tree = gather_branch(state.canvas.root_id)
+    goal = req.goal or root.content_full
+
+    # synthesize prompt
+    prompt = f"""You have access to a tree of exploratory thinking about a goal. The tree includes:
+- The original goal/thesis
+- Antitheses (counterarguments, alternative viewpoints)
+- Cruxes (key decision points, critical assumptions)
+- Stress tests (failure modes, edge cases)
+- Alternatives (different approaches)
+- Various other analytical operations
+
+Your task: Synthesize ALL of this thinking into a CONCRETE, LINEAR, ACTIONABLE PLAN.
+
+The plan should:
+1. Acknowledge key concerns raised in the analysis
+2. Make explicit decisions where alternatives were considered
+3. Include specific, numbered steps
+4. Be directly executable (not more analysis)
+
+GOAL:
+{goal}
+
+EXPLORATORY THINKING TREE:
+{full_tree}
+
+---
+
+Output a markdown plan with this structure:
+
+# Plan: [concise title]
+
+## Context
+[1-2 sentences on what was analyzed and key insights]
+
+## Decisions Made
+[Bullet list of key choices, referencing which concerns they address]
+
+## Steps
+
+1. **[Step title]**
+   [Specific action with details]
+
+2. **[Step title]**
+   [Specific action with details]
+
+[Continue with concrete steps...]
+
+## Risks & Mitigations
+[Brief list of remaining risks and how to handle them]
+
+---
+
+Generate the plan now:"""
+
+    result = await state.client.complete(prompt)
+
+    # create plan node
+    plan_node = CanvasNode.create_plan(
+        content=result,
+        parent_id=state.canvas.root_id,
+        source_ids=source_ids,
+    )
+    state.canvas.add_node(plan_node)
+    state.canvas.set_focus(plan_node.id)
+
+    # save to Claude Code plans directory
+    if req.save_to_claude:
+        import re
+        from datetime import datetime
+
+        plans_dir = Path.home() / ".claude" / "plans"
+        plans_dir.mkdir(parents=True, exist_ok=True)
+
+        # generate slug from canvas name
+        slug = re.sub(r'[^a-z0-9]+', '-', state.canvas.name.lower()).strip('-')
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+        filename = f"{slug}-{timestamp}.md"
+
+        plan_path = plans_dir / filename
+        plan_path.write_text(result)
+
+        # add file path to response metadata
+        plan_node.context_snapshot = [str(plan_path)]
+
+    state.auto_save()
+    return NodeResponse.from_node(plan_node)
 
 
 # --- entrypoint ---
