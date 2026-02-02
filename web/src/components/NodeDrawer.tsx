@@ -318,8 +318,8 @@ export default function NodeDrawer({
         </div>
       </div>
 
-      {/* Context: what this was run on */}
-      {parentNode && node.type === 'operation' && (
+      {/* Invocation info: what was run and on what */}
+      {node.type === 'operation' && (node.invocation_prompt || node.invocation_target || parentNode) && (
         <div
           style={{
             padding: '12px 16px',
@@ -327,6 +327,29 @@ export default function NodeDrawer({
             borderBottom: '1px solid #30363d',
           }}
         >
+          {/* Invocation prompt - what was asked */}
+          {node.invocation_prompt && (
+            <div style={{ marginBottom: node.invocation_target ? '12px' : 0 }}>
+              <div style={{ fontSize: '11px', color: '#666', marginBottom: '4px' }}>
+                {node.operation === 'chat' ? 'Prompt:' : 'Skill:'}
+              </div>
+              <div
+                style={{
+                  fontSize: '13px',
+                  color: node.operation === 'chat' ? '#f0883e' : '#58a6ff',
+                  fontStyle: node.operation === 'chat' ? 'italic' : 'normal',
+                  padding: '6px 10px',
+                  background: '#161b22',
+                  borderRadius: '4px',
+                  borderLeft: `3px solid ${node.operation === 'chat' ? '#f0883e' : '#58a6ff'}`,
+                }}
+              >
+                {node.operation === 'chat' ? `"${node.invocation_prompt}"` : node.invocation_prompt}
+              </div>
+            </div>
+          )}
+
+          {/* Invocation target - what it was run on */}
           <div
             style={{
               display: 'flex',
@@ -361,7 +384,11 @@ export default function NodeDrawer({
               whiteSpace: showFullParent ? 'pre-wrap' : 'normal',
             }}
           >
-            {showFullParent ? parentNode.content_full : parentNode.content_compressed}
+            {node.invocation_target
+              ? (showFullParent ? node.invocation_target : node.invocation_target.slice(0, 100) + (node.invocation_target.length > 100 ? '...' : ''))
+              : parentNode
+                ? (showFullParent ? parentNode.content_full : parentNode.content_compressed)
+                : '(no target recorded)'}
           </div>
         </div>
       )}

@@ -11,6 +11,8 @@ export interface CanvasNode {
   links_to: string[];
   excluded: boolean;
   source_ids: string[];
+  invocation_target: string | null;
+  invocation_prompt: string | null;
 }
 
 export interface Canvas {

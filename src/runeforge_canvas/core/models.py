@@ -50,6 +50,10 @@ class CanvasNode:
     excluded: bool = False  # mark node to exclude from plan synthesis
     source_ids: list[str] = field(default_factory=list)  # for plan nodes: which nodes contributed
 
+    # invocation tracking - what was run and on what
+    invocation_target: Optional[str] = None  # the content that was passed as input
+    invocation_prompt: Optional[str] = None  # for chat: user's prompt; for skills: skill name
+
     @classmethod
     def create_root(cls, content: str) -> CanvasNode:
         """create a root node with initial question/context."""
@@ -67,6 +71,8 @@ class CanvasNode:
         content: str,
         parent_id: str,
         context_snapshot: list[str],
+        invocation_target: Optional[str] = None,
+        invocation_prompt: Optional[str] = None,
     ) -> CanvasNode:
         """create an operation result node."""
         return cls(
@@ -77,6 +83,8 @@ class CanvasNode:
             content_full=content,
             parent_id=parent_id,
             context_snapshot=context_snapshot,
+            invocation_target=invocation_target,
+            invocation_prompt=invocation_prompt,
         )
 
     @classmethod

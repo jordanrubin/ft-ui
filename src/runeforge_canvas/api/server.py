@@ -120,6 +120,8 @@ class NodeResponse(BaseModel):
     links_to: list[str]
     excluded: bool = False
     source_ids: list[str] = []
+    invocation_target: Optional[str] = None
+    invocation_prompt: Optional[str] = None
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
@@ -134,6 +136,8 @@ class NodeResponse(BaseModel):
             links_to=node.links_to,
             excluded=node.excluded,
             source_ids=node.source_ids,
+            invocation_target=node.invocation_target,
+            invocation_prompt=node.invocation_prompt,
         )
 
 
@@ -712,12 +716,14 @@ async def run_skill(req: SkillRun):
     prompt = skill.build_prompt(context_text, req.params)
     result = await state.client.complete(prompt)
 
-    # create result node
+    # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
         content=result,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
+        invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
+        invocation_prompt=skill.display_name,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -741,7 +747,6 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
         raise HTTPException(status_code=404, detail=f"node not found: {req.node_id}")
 
     # Build prompt focused on selected content only
-    # Parent context is available but the skill should target the selection
     focus_directive = f"""<directive>
 FOCUS: Apply this skill ONLY to the selected content below. Do not analyze the parent context - it is provided only for background understanding. Your response should be about the selection, not the broader document.
 </directive>
@@ -753,12 +758,14 @@ FOCUS: Apply this skill ONLY to the selected content below. Do not analyze the p
     prompt = skill.build_prompt(focus_directive, req.params)
     result = await state.client.complete(prompt)
 
-    # create result node
+    # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
         content=result,
         parent_id=focus.id,
-        context_snapshot=[n.id for n in context_nodes],
+        context_snapshot=[focus.id],
+        invocation_target=req.selected_content[:500] + ("..." if len(req.selected_content) > 500 else ""),
+        invocation_prompt=skill.display_name,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -800,13 +807,14 @@ The following context includes {len(req.node_ids)} selected nodes that the user 
     result = await state.client.complete(prompt)
 
     # create result node as child of the first selected node
-    # (or could create it at root level - using first selected as parent for now)
     parent_id = req.node_ids[0]
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
         content=result,
         parent_id=parent_id,
         context_snapshot=[n.id for n in context_nodes],
+        invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
+        invocation_prompt=f"{skill.display_name} on {len(req.node_ids)} nodes",
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -846,13 +854,15 @@ async def run_chain(req: ChainRun):
         results.append(f"## {skill.display_name}\n\n{result}")
         current_input = result
 
-    # create result node
+    # create result node with invocation tracking
     combined = "\n\n---\n\n".join(results)
     new_node = CanvasNode.create_operation(
         operation=chain.display_name,
         content=combined,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
+        invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
+        invocation_prompt=chain.display_name,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -888,12 +898,14 @@ respond thoughtfully to the user's question about this context. be specific and 
 
     result = await state.client.complete(prompt)
 
-    # create result node
+    # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation="chat",
         content=result,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
+        invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
+        invocation_prompt=req.prompt,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)

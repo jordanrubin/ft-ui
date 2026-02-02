@@ -57,14 +57,14 @@ export default function SkillsPane({
         </div>
       </div>
 
-      {/* Target preview */}
+      {/* Invocation preview */}
       <div style={{
         padding: '12px 16px',
         borderBottom: '1px solid #30363d',
         background: '#161b22',
       }}>
         <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '6px', textTransform: 'uppercase' }}>
-          Target
+          Run On
         </div>
         <div style={{
           fontSize: '13px',
@@ -74,7 +74,12 @@ export default function SkillsPane({
           background: '#0d1117',
           borderRadius: '6px',
           border: '1px solid #30363d',
+          maxHeight: '120px',
+          overflow: 'auto',
         }}>
+          <div style={{ color: '#8b949e', fontSize: '11px', marginBottom: '4px' }}>
+            {selectedContent ? 'Selection:' : 'Node content:'}
+          </div>
           {truncated}
         </div>
       </div>
