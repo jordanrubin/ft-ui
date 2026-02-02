@@ -69,26 +69,28 @@ export default function SubsectionViewer({
     }
   };
 
-  // Get section label based on content type
+  // Get section label based on content type - only for skill-specific outputs
   const getSectionLabel = () => {
+    // Only show labels for skill-specific parsers, not generic content
+    const skill = node.operation?.toLowerCase().replace('@', '');
+    if (!skill || skill === 'chat') return null;
+
     const firstType = parsedResponse.subsections[0]?.type;
     switch (firstType) {
       case 'antithesis':
-        return 'ANTITHESES — CLICK TO SELECT';
+        return 'ANTITHESES';
       case 'crux':
-        return 'CRUXES — CLICK TO SELECT';
+        return 'CRUXES';
       case 'assumption':
-        return 'ASSUMPTIONS — CLICK TO SELECT';
+        return 'ASSUMPTIONS';
       case 'alternative':
-        return 'ALTERNATIVES — CLICK TO SELECT';
+        return 'ALTERNATIVES';
       case 'failure_mode':
-        return 'FAILURE MODES — CLICK TO SELECT';
+        return 'FAILURE MODES';
       case 'dimension':
-        return 'DIMENSIONS — CLICK TO SELECT';
-      case 'question':
-        return 'QUESTIONS — ANSWER BELOW';
+        return 'DIMENSIONS';
       default:
-        return null; // Don't show a label for generic content
+        return null; // Don't show a label for generic/section/proposal/question
     }
   };
 
@@ -192,20 +194,15 @@ export default function SubsectionViewer({
         </div>
       )}
 
-      {/* Instruction hint - only show if we have subsections and nothing selected */}
+      {/* Hint - minimal, only for first-time users */}
       {!selectedId && parsedResponse.subsections.length > 0 && (
         <div style={{
-          background: '#fef9c3',
-          border: '1px solid #fde047',
-          borderRadius: '8px',
-          padding: '12px 16px',
-          marginBottom: '16px',
-          fontSize: '14px',
-          color: '#713f12',
-          lineHeight: 1.5,
+          fontSize: '12px',
+          color: '#9ca3af',
+          marginBottom: '12px',
+          fontStyle: 'italic',
         }}>
-          <strong style={{ color: '#a16207' }}>How to use:</strong>{' '}
-          Click an item to select it, then click an operation button to run that skill on the selected content.
+          Click to select, then run a skill on it
         </div>
       )}
 
