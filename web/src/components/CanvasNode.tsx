@@ -7,7 +7,6 @@ export interface CanvasNodeData extends Record<string, unknown> {
   node: CanvasNodeType;
   isActive: boolean;
   isFocused: boolean;
-  hasLinks: boolean;
   isSelected: boolean;
 }
 
@@ -34,7 +33,7 @@ const operationColors: Record<string, string> = {
 };
 
 function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
-  const { node, isActive, isFocused, hasLinks, isSelected } = data as CanvasNodeData;
+  const { node, isActive, isFocused, isSelected } = data as CanvasNodeData;
   const colors = typeColors[node.type] || typeColors.user;
   const operationColor = node.operation ? operationColors[node.operation] || '#666' : null;
 
@@ -125,49 +124,12 @@ function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
         {stripMarkdown(node.content_compressed)}
       </div>
 
-      {/* Links indicator */}
-      {hasLinks && (
-        <div
-          style={{
-            position: 'absolute',
-            top: -6,
-            right: -6,
-            width: 16,
-            height: 16,
-            borderRadius: '50%',
-            background: '#9b59b6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '10px',
-            color: '#fff',
-          }}
-        >
-
-        </div>
-      )}
 
       {/* Bottom handle for outgoing edges */}
       <Handle
         type="source"
         position={Position.Bottom}
         style={{ background: '#555', width: 8, height: 8 }}
-      />
-
-      {/* Left handle for cross-links */}
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="link-source"
-        style={{ background: '#9b59b6', width: 6, height: 6 }}
-      />
-
-      {/* Right handle for cross-links */}
-      <Handle
-        type="target"
-        position={Position.Right}
-        id="link-target"
-        style={{ background: '#9b59b6', width: 6, height: 6 }}
       />
     </div>
   );

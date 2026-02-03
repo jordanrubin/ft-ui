@@ -79,7 +79,6 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
       node,
       isActive: activePath.has(node.id),
       isFocused: node.id === focusId,
-      hasLinks: node.links_to.length > 0,
       isSelected: selectedNodeIds.has(node.id),
     },
   }));
@@ -103,30 +102,6 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
       });
     });
 
-    // Cross-link edges (dotted)
-    node.links_to.forEach((linkId) => {
-      if (canvas.nodes[linkId]) {
-        edges.push({
-          id: `l-${node.id}-${linkId}`,
-          source: node.id,
-          target: linkId,
-          sourceHandle: 'link-source',
-          targetHandle: 'link-target',
-          type: 'default',
-          animated: true,
-          style: {
-            stroke: '#9b59b6',
-            strokeWidth: 2,
-            strokeDasharray: '5,5',
-          },
-          markerEnd: {
-            type: MarkerType.Arrow,
-            color: '#9b59b6',
-          },
-          data: { type: 'crosslink' },
-        });
-      }
-    });
   });
 
   // Apply dagre layout
