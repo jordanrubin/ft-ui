@@ -20,25 +20,33 @@ export default function App() {
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
   const [linkedNodes, setLinkedNodes] = useState<CanvasNode[]>([]);
   const [backlinks, setBacklinks] = useState<CanvasNode[]>([]);
-  const [runningStatus, setRunningStatus] = useState<{
-    active: boolean;
+  // Track multiple concurrent operations
+  const [runningOps, setRunningOps] = useState<Map<string, {
+    operation: string;
     stage: 'sending' | 'waiting' | 'processing' | 'updating';
-    operation?: string;
-    startTime?: number;
-  }>({ active: false, stage: 'sending' });
+    startTime: number;
+  }>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
-  // Helper for cleaner status updates
-  const isRunning = runningStatus.active;
-  const setIsRunning = (running: boolean) => {
-    if (running) {
-      setRunningStatus({ active: true, stage: 'sending', startTime: Date.now() });
-    } else {
-      setRunningStatus({ active: false, stage: 'sending' });
-    }
+  // Helper for managing concurrent operations
+  const isRunning = runningOps.size > 0;
+  const startOperation = (id: string, operation: string) => {
+    setRunningOps(prev => new Map(prev).set(id, { operation, stage: 'sending', startTime: Date.now() }));
   };
-  const setRunningStage = (stage: 'sending' | 'waiting' | 'processing' | 'updating', operation?: string) => {
-    setRunningStatus(prev => ({ ...prev, stage, operation: operation || prev.operation }));
+  const updateOperationStage = (id: string, stage: 'sending' | 'waiting' | 'processing' | 'updating') => {
+    setRunningOps(prev => {
+      const newMap = new Map(prev);
+      const op = newMap.get(id);
+      if (op) newMap.set(id, { ...op, stage });
+      return newMap;
+    });
+  };
+  const endOperation = (id: string) => {
+    setRunningOps(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(id);
+      return newMap;
+    });
   };
   const [showSidebar, setShowSidebar] = useState(true);
   const [planFiles, setPlanFiles] = useState<PlanFileInfo[]>([]);
@@ -148,75 +156,86 @@ export default function App() {
   const handleSkillRun = useCallback(
     async (skillName: string) => {
       if (!selectedNode) return;
-      setSelectedNode(null); // close drawer
-      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
+      const opId = `${skillName}-${Date.now()}`;
+      const nodeId = selectedNode.id;
+      // Don't close drawer - allow queuing more operations
+      startOperation(opId, skillName);
       setError(null);
-      try {
-        setRunningStage('waiting', skillName);
-        const newNode = await skillApi.run(skillName, selectedNode.id);
-        setRunningStage('processing');
-        await refreshCanvas();
-        setRunningStage('updating');
-        // focus the new node
-        if (newNode?.id) {
-          setSelectedNode(newNode);
+
+      // Run async without blocking
+      (async () => {
+        try {
+          updateOperationStage(opId, 'waiting');
+          const newNode = await skillApi.run(skillName, nodeId);
+          updateOperationStage(opId, 'processing');
+          await refreshCanvas();
+          // Don't auto-select result when running concurrent ops
+          if (runningOps.size <= 1 && newNode?.id) {
+            setSelectedNode(newNode);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : `${skillName} failed`);
+        } finally {
+          endOperation(opId);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Skill failed');
-      } finally {
-        setIsRunning(false);
-      }
+      })();
     },
-    [selectedNode, refreshCanvas]
+    [selectedNode, refreshCanvas, runningOps.size]
   );
 
   const handleSkillRunOnSelection = useCallback(
     async (skillName: string, selectedContent: string) => {
       if (!selectedNode) return;
-      setSelectedNode(null); // close drawer
-      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
+      const opId = `${skillName}-sel-${Date.now()}`;
+      const nodeId = selectedNode.id;
+      startOperation(opId, skillName);
       setError(null);
-      try {
-        setRunningStage('waiting', skillName);
-        const newNode = await skillApi.runOnSelection(skillName, selectedNode.id, selectedContent);
-        setRunningStage('processing');
-        await refreshCanvas();
-        setRunningStage('updating');
-        if (newNode?.id) {
-          setSelectedNode(newNode);
+
+      (async () => {
+        try {
+          updateOperationStage(opId, 'waiting');
+          const newNode = await skillApi.runOnSelection(skillName, nodeId, selectedContent);
+          updateOperationStage(opId, 'processing');
+          await refreshCanvas();
+          if (runningOps.size <= 1 && newNode?.id) {
+            setSelectedNode(newNode);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : `${skillName} on selection failed`);
+        } finally {
+          endOperation(opId);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Skill on selection failed');
-      } finally {
-        setIsRunning(false);
-      }
+      })();
     },
-    [selectedNode, refreshCanvas]
+    [selectedNode, refreshCanvas, runningOps.size]
   );
 
   const handleSkillRunOnMultiple = useCallback(
     async (skillName: string) => {
       if (selectedNodeIds.size === 0) return;
-      setRunningStatus({ active: true, stage: 'sending', operation: skillName, startTime: Date.now() });
+      const opId = `${skillName}-multi-${Date.now()}`;
+      const nodeIds = [...selectedNodeIds];
+      setSelectedNodeIds(new Set()); // clear selection immediately
+      startOperation(opId, skillName);
       setError(null);
-      try {
-        setRunningStage('waiting', skillName);
-        const nodeIds = [...selectedNodeIds];
-        const newNode = await skillApi.runOnMultiple(skillName, nodeIds);
-        setRunningStage('processing');
-        setSelectedNodeIds(new Set()); // clear selection
-        await refreshCanvas();
-        setRunningStage('updating');
-        if (newNode?.id) {
-          setSelectedNode(newNode);
+
+      (async () => {
+        try {
+          updateOperationStage(opId, 'waiting');
+          const newNode = await skillApi.runOnMultiple(skillName, nodeIds);
+          updateOperationStage(opId, 'processing');
+          await refreshCanvas();
+          if (runningOps.size <= 1 && newNode?.id) {
+            setSelectedNode(newNode);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : `${skillName} on multiple failed`);
+        } finally {
+          endOperation(opId);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Skill on multiple nodes failed');
-      } finally {
-        setIsRunning(false);
-      }
+      })();
     },
-    [selectedNodeIds, refreshCanvas]
+    [selectedNodeIds, refreshCanvas, runningOps.size]
   );
 
   const handleClearMultiSelection = useCallback(() => {
@@ -226,23 +245,26 @@ export default function App() {
   const handleChatSubmit = useCallback(
     async (prompt: string) => {
       if (!selectedNode) return;
-      setSelectedNode(null); // close drawer
-      setRunningStatus({ active: true, stage: 'sending', operation: 'chat', startTime: Date.now() });
+      const opId = `chat-${Date.now()}`;
+      const nodeId = selectedNode.id;
+      startOperation(opId, 'chat');
       setError(null);
-      try {
-        setRunningStage('waiting', 'chat');
-        const newNode = await skillApi.runChat(prompt, selectedNode.id);
-        setRunningStage('processing');
-        await refreshCanvas();
-        setRunningStage('updating');
-        if (newNode?.id) {
-          setSelectedNode(newNode);
+
+      (async () => {
+        try {
+          updateOperationStage(opId, 'waiting');
+          const newNode = await skillApi.runChat(prompt, nodeId);
+          updateOperationStage(opId, 'processing');
+          await refreshCanvas();
+          if (runningOps.size <= 1 && newNode?.id) {
+            setSelectedNode(newNode);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Chat failed');
+        } finally {
+          endOperation(opId);
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Chat failed');
-      } finally {
-        setIsRunning(false);
-      }
+      })();
     },
     [selectedNode, refreshCanvas]
   );
@@ -300,35 +322,39 @@ export default function App() {
   }, [selectedNode, refreshCanvas]);
 
   const handleSynthesizePlan = useCallback(async () => {
-    setRunningStatus({ active: true, stage: 'sending', operation: 'synthesize', startTime: Date.now() });
+    const opId = `synthesize-${Date.now()}`;
+    startOperation(opId, 'synthesize');
     setError(null);
-    try {
-      // Gather all answers from localStorage
-      const allAnswers: Record<string, Record<string, string>> = {};
-      if (canvas) {
-        for (const nodeId of Object.keys(canvas.nodes)) {
-          const stored = localStorage.getItem(`rf-answers-${nodeId}`);
-          if (stored) {
-            try {
-              allAnswers[nodeId] = JSON.parse(stored);
-            } catch {
-              // ignore invalid JSON
+
+    (async () => {
+      try {
+        // Gather all answers from localStorage
+        const allAnswers: Record<string, Record<string, string>> = {};
+        if (canvas) {
+          for (const nodeId of Object.keys(canvas.nodes)) {
+            const stored = localStorage.getItem(`rf-answers-${nodeId}`);
+            if (stored) {
+              try {
+                allAnswers[nodeId] = JSON.parse(stored);
+              } catch {
+                // ignore invalid JSON
+              }
             }
           }
         }
-      }
 
-      setRunningStage('waiting', 'synthesize');
-      const planNode = await planApi.synthesize(undefined, true, allAnswers);
-      setRunningStage('processing');
-      await refreshCanvas();
-      setRunningStage('updating');
-      setSelectedNode(planNode);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Plan synthesis failed');
-    } finally {
-      setIsRunning(false);
-    }
+        updateOperationStage(opId, 'waiting');
+        const planNode = await planApi.synthesize(undefined, true, allAnswers);
+        updateOperationStage(opId, 'processing');
+        await refreshCanvas();
+        updateOperationStage(opId, 'updating');
+        setSelectedNode(planNode);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Plan synthesis failed');
+      } finally {
+        endOperation(opId);
+      }
+    })();
   }, [refreshCanvas, canvas]);
 
   const handleCreateCanvas = useCallback(async () => {
@@ -974,98 +1000,70 @@ export default function App() {
           {showSidebar ? '◀' : '▶'}
         </button>
 
-        {/* Loading overlay */}
+        {/* Running operations indicator - non-blocking, bottom right */}
         {isRunning && (
           <div
             style={{
               position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(13, 17, 23, 0.8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              bottom: '20px',
+              right: '20px',
               zIndex: 100,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              maxWidth: '300px',
             }}
           >
-            <div
-              style={{
-                padding: '24px 48px',
-                background: '#161b22',
-                borderRadius: '12px',
-                border: '1px solid #30363d',
-                textAlign: 'center',
-                minWidth: '280px',
-              }}
-            >
-              {/* Spinner */}
+            {Array.from(runningOps.entries()).map(([id, op]) => (
               <div
+                key={id}
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  border: '3px solid #30363d',
-                  borderTopColor: runningStatus.stage === 'waiting' ? '#58a6ff'
-                    : runningStatus.stage === 'processing' ? '#3fb950'
-                    : runningStatus.stage === 'updating' ? '#a371f7'
-                    : '#58a6ff',
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite',
-                  margin: '0 auto 16px',
+                  padding: '12px 16px',
+                  background: '#161b22',
+                  borderRadius: '8px',
+                  border: '1px solid #30363d',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
                 }}
-              />
-
-              {/* Operation name */}
-              {runningStatus.operation && (
-                <div style={{
-                  color: '#58a6ff',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  marginBottom: '8px',
-                  fontFamily: 'monospace',
-                }}>
-                  {runningStatus.operation}
+              >
+                {/* Spinner */}
+                <div
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    border: '2px solid #30363d',
+                    borderTopColor: op.stage === 'waiting' ? '#58a6ff'
+                      : op.stage === 'processing' ? '#3fb950'
+                      : op.stage === 'updating' ? '#a371f7'
+                      : '#58a6ff',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    color: '#58a6ff',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>
+                    {op.operation}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '11px' }}>
+                    {op.stage === 'sending' && 'Sending...'}
+                    {op.stage === 'waiting' && 'Waiting...'}
+                    {op.stage === 'processing' && 'Processing...'}
+                    {op.stage === 'updating' && 'Updating...'}
+                  </div>
                 </div>
-              )}
-
-              {/* Stage message */}
-              <div style={{ color: '#e0e0e0', fontSize: '15px' }}>
-                {runningStatus.stage === 'sending' && 'Sending request...'}
-                {runningStatus.stage === 'waiting' && 'Waiting for response...'}
-                {runningStatus.stage === 'processing' && 'Processing result...'}
-                {runningStatus.stage === 'updating' && 'Updating canvas...'}
               </div>
-
-              {/* Stage indicator dots */}
-              <div style={{
-                display: 'flex',
-                justifyContent: 'center',
-                gap: '8px',
-                marginTop: '16px'
-              }}>
-                {['sending', 'waiting', 'processing', 'updating'].map((stage, i) => {
-                  const stages = ['sending', 'waiting', 'processing', 'updating'];
-                  const currentIndex = stages.indexOf(runningStatus.stage);
-                  const isComplete = i < currentIndex;
-                  const isCurrent = stage === runningStatus.stage;
-                  return (
-                    <div
-                      key={stage}
-                      style={{
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: isComplete ? '#3fb950'
-                          : isCurrent ? '#58a6ff'
-                          : '#30363d',
-                        transition: 'background 0.3s ease',
-                      }}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+            ))}
           </div>
         )}
 
