@@ -76,6 +76,11 @@ export default function App() {
       setPlanFiles(plans);
       if (currentCanvas) {
         setCanvas(currentCanvas);
+        // Collapse sidebar if canvas has nodes (user is returning to work)
+        const nodeCount = Object.keys(currentCanvas.nodes || {}).length;
+        if (nodeCount > 0) {
+          setShowSidebar(false);
+        }
       }
     });
   }, []);
@@ -378,6 +383,10 @@ export default function App() {
       setCanvas(loaded);
       setSelectedNode(null);
       setShowCanvasPicker(false);
+      // Collapse sidebar if canvas has nodes
+      if (Object.keys(loaded.nodes || {}).length > 0) {
+        setShowSidebar(false);
+      }
       // Refresh canvas list after load
       setCanvasList(await canvasApi.list());
     } catch (err) {
@@ -391,6 +400,7 @@ export default function App() {
       setCanvas(newCanvas);
       setSelectedNode(null);
       setShowPlanPicker(false);
+      setShowSidebar(false); // Collapse - new canvas has content
       // Refresh canvas list
       const list = await canvasApi.list();
       setCanvasList(list);
@@ -406,6 +416,7 @@ export default function App() {
       setSelectedNode(null);
       setShowDirectoryInput(false);
       setDirectoryPath('');
+      setShowSidebar(false); // Collapse - new canvas has content
       // Refresh canvas list
       const list = await canvasApi.list();
       setCanvasList(list);
