@@ -64,12 +64,14 @@ function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
         transition: 'all 0.2s ease',
       }}
     >
-      {/* Top handle for incoming edges */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        style={{ background: '#555', width: 8, height: 8 }}
-      />
+      {/* Top handle for incoming edges - not shown on root */}
+      {node.type !== 'root' && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          style={{ background: '#555', width: 8, height: 8 }}
+        />
+      )}
 
       {/* Operation badge */}
       {node.operation && (

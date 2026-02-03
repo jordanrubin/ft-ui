@@ -53,13 +53,20 @@ function getLayoutedElements(
 
   dagre.layout(dagreGraph);
 
+  // Find minimum y position (root node) to normalize layout
+  let minY = Infinity;
+  nodes.forEach((node) => {
+    const pos = dagreGraph.node(node.id);
+    if (pos.y < minY) minY = pos.y;
+  });
+
   const layoutedNodes: CanvasNodeType2[] = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
     return {
       ...node,
       position: {
         x: nodeWithPosition.x - nodeWidth / 2,
-        y: nodeWithPosition.y - nodeHeight / 2,
+        y: nodeWithPosition.y - minY, // Normalize so root starts at y=0
       },
     };
   });
