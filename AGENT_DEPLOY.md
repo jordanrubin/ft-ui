@@ -195,6 +195,16 @@ claude --version
 claude "hello"  # should respond without auth errors
 ```
 
+### hooks interference
+runeforge canvas uses pure text generation with no tool calls. it explicitly disables all tools when connecting to the API, so tool-use hooks (Bash, file operations, etc.) should not fire.
+
+if you still see permission issues, check your claude code hooks:
+```bash
+cat ~/.claude/settings.json | grep -A 20 hooks
+```
+
+runeforge only needs the ability to send prompts and receive text responses - no file access, no bash, no MCP servers.
+
 ## ports summary
 
 | service | port | purpose |

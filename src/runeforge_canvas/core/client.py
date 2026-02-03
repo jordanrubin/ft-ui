@@ -97,7 +97,13 @@ class ClaudeClient:
         creates a fresh client for each query to avoid state conflicts.
         """
         # create fresh client for each query to avoid state conflicts
-        options = ClaudeAgentOptions(cwd=str(self.cwd))
+        # explicitly disable all tools - runeforge only needs text generation
+        # this bypasses any tool-use hooks the user may have configured
+        options = ClaudeAgentOptions(
+            cwd=str(self.cwd),
+            tools=[],  # no tools - pure text generation
+            allowed_tools=[],  # explicit: no tools allowed
+        )
         client: Optional[ClaudeSDKClient] = None
 
         try:
