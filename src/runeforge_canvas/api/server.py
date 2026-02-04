@@ -438,13 +438,45 @@ async def list_skills():
 
 @app.post("/canvas", response_model=CanvasResponse)
 async def create_canvas(req: CanvasCreate):
-    """create a new canvas."""
+    """create a new canvas with auto-generated initial response."""
     state.canvas = Canvas(name=req.name)
     root = CanvasNode.create_root(req.root_content)
     state.canvas.add_node(root)
     # set new canvas_path so we don't overwrite old canvas
     safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in req.name)
     state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+
+    # auto-generate initial response to give user something to work with
+    try:
+        initial_prompt = f"""the user wants to build something. here's their initial description:
+
+{req.root_content}
+
+---
+
+provide a brief initial reaction (2-3 paragraphs max):
+1. restate what you understand they want to accomplish
+2. identify 2-3 key considerations or questions that would help clarify the approach
+3. suggest which runeforge skill might be most useful to run first (@excavate for assumptions, @stressify for risks, @diverge for alternatives, etc.)
+
+be concise and actionable."""
+
+        result = await state.client.complete(initial_prompt)
+
+        initial_node = CanvasNode.create_operation(
+            operation="chat",
+            content=result,
+            parent_id=root.id,
+            context_snapshot=[root.id],
+            invocation_target=req.root_content[:500],
+            invocation_prompt="[auto] initial analysis",
+        )
+        state.canvas.add_node(initial_node)
+        state.canvas.set_focus(initial_node.id)
+    except Exception:
+        # if auto-response fails, just return canvas with root only
+        pass
+
     state.mark_dirty()
     state.save_session()
     return _canvas_response()
