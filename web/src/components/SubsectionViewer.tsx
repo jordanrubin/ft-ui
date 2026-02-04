@@ -47,6 +47,7 @@ export default function SubsectionViewer({
 }: SubsectionViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Load answers from localStorage
   const storageKey = `rf-answers-${node.id}`;
@@ -389,18 +390,46 @@ export default function SubsectionViewer({
         {showRaw && (
           <div style={{
             marginTop: '12px',
-            padding: '16px',
-            background: '#f1f5f9',
-            borderRadius: '8px',
-            color: '#475569',
-            fontSize: '13px',
-            lineHeight: 1.6,
-            whiteSpace: 'pre-wrap',
-            maxHeight: '300px',
-            overflow: 'auto',
-            fontFamily: 'ui-monospace, monospace',
+            position: 'relative',
           }}>
-            {parsedResponse.rawContent}
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(parsedResponse.rawContent);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              style={{
+                position: 'absolute',
+                top: '8px',
+                right: '8px',
+                padding: '6px 10px',
+                background: copied ? '#059669' : '#475569',
+                border: 'none',
+                borderRadius: '4px',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                zIndex: 1,
+              }}
+            >
+              {copied ? '\u2713 Copied' : 'Copy'}
+            </button>
+            <div style={{
+              padding: '16px',
+              paddingTop: '36px',
+              background: '#f1f5f9',
+              borderRadius: '8px',
+              color: '#475569',
+              fontSize: '13px',
+              lineHeight: 1.6,
+              whiteSpace: 'pre-wrap',
+              maxHeight: '300px',
+              overflow: 'auto',
+              fontFamily: 'ui-monospace, monospace',
+            }}>
+              {parsedResponse.rawContent}
+            </div>
           </div>
         )}
       </div>

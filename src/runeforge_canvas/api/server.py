@@ -90,6 +90,7 @@ class CanvasCreate(BaseModel):
     name: str
     root_content: str
     template: Optional[str] = None  # template name to use
+    skip_auto_response: bool = False  # skip initial chat generation (do it async)
 
 
 class NodeEdit(BaseModel):
@@ -440,13 +441,20 @@ async def list_skills():
 
 @app.post("/canvas", response_model=CanvasResponse)
 async def create_canvas(req: CanvasCreate):
-    """create a new canvas with auto-generated initial response."""
+    """create a new canvas with optional auto-generated initial response."""
     state.canvas = Canvas(name=req.name)
     root = CanvasNode.create_root(req.root_content)
     state.canvas.add_node(root)
     # set new canvas_path so we don't overwrite old canvas
     safe_name = "".join(c if c.isalnum() or c in "-_" else "-" for c in req.name)
     state.canvas_path = get_canvas_dir() / f"{safe_name}.json"
+
+    state.mark_dirty()
+    state.save_session()
+
+    # skip auto response if requested (frontend will trigger it separately)
+    if req.skip_auto_response:
+        return _canvas_response()
 
     # auto-generate initial response to give user something to work with
     try:
@@ -475,12 +483,12 @@ be concise and actionable."""
         )
         state.canvas.add_node(initial_node)
         state.canvas.set_focus(initial_node.id)
+        state.mark_dirty()
+        state.save_session()
     except Exception:
         # if auto-response fails, just return canvas with root only
         pass
 
-    state.mark_dirty()
-    state.save_session()
     return _canvas_response()
 
 

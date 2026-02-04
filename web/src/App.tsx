@@ -380,19 +380,54 @@ export default function App() {
 
   const handleCreateCanvas = useCallback(async () => {
     if (!newCanvasName.trim() || !newCanvasGoal.trim()) return;
+    const goal = newCanvasGoal.trim();
+    const name = newCanvasName.trim();
+
     try {
-      const newCanvas = await canvasApi.create(newCanvasName.trim(), newCanvasGoal.trim());
+      // Create canvas immediately (skip auto-response for instant feedback)
+      const newCanvas = await canvasApi.create(name, goal, true);
       setCanvas(newCanvas);
       setSelectedNode(null);
       setShowNewCanvasModal(false);
       setNewCanvasName('');
       setNewCanvasGoal('');
-      setShowSidebar(false); // Collapse - new canvas has content
+      setShowSidebar(false);
       setCanvasList(await canvasApi.list());
+
+      // Generate initial chat response in background
+      const rootId = newCanvas.root_id;
+      if (rootId) {
+        const opId = `init_${Date.now()}`;
+        startOperation(opId, 'chat');
+        setError(null);
+
+        (async () => {
+          try {
+            updateOperationStage(opId, 'waiting');
+            const initialPrompt = `provide a brief initial reaction (2-3 paragraphs max):
+1. restate what you understand they want to accomplish
+2. identify 2-3 key considerations or questions that would help clarify the approach
+3. suggest which runeforge skill might be most useful to run first (@excavate for assumptions, @stressify for risks, @diverge for alternatives, etc.)
+
+be concise and actionable.`;
+            const newNode = await skillApi.runChat(initialPrompt, rootId);
+            updateOperationStage(opId, 'processing');
+            await refreshCanvas();
+            if (newNode?.id) {
+              setSelectedNode(newNode);
+            }
+          } catch (err) {
+            // Silent fail for auto-response - user can still work with canvas
+            console.error('Auto-response generation failed:', err);
+          } finally {
+            endOperation(opId);
+          }
+        })();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed');
     }
-  }, [newCanvasName, newCanvasGoal]);
+  }, [newCanvasName, newCanvasGoal, refreshCanvas]);
 
   const handleLoadCanvas = useCallback(async (path: string) => {
     try {

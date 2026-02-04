@@ -77,10 +77,10 @@ export const canvasApi = {
   get: () => request<Canvas>('/canvas'),
 
   // Create new canvas
-  create: (name: string, rootContent: string) =>
+  create: (name: string, rootContent: string, skipAutoResponse = false) =>
     request<Canvas>('/canvas', {
       method: 'POST',
-      body: JSON.stringify({ name, root_content: rootContent }),
+      body: JSON.stringify({ name, root_content: rootContent, skip_auto_response: skipAutoResponse }),
     }),
 
   // Create from template
