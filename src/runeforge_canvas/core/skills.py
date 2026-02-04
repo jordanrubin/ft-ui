@@ -58,8 +58,8 @@ class Skill:
 
 apply the {self.name} skill above to the context. follow the skill's process exactly."""
 
-        # append canvas format instructions if render=canvas
-        if should_use_canvas_format(render_params):
+        # append canvas format instructions if render=canvas (some skills excluded)
+        if should_use_canvas_format(render_params, skill_name=self.name):
             verbosity = int(render_params.get("verbosity", 1))
             focus = render_params.get("focus")
             base += build_canvas_suffix(verbosity=verbosity, focus=focus)

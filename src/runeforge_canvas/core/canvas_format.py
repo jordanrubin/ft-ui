@@ -89,9 +89,24 @@ def build_canvas_suffix(
     return suffix
 
 
-def should_use_canvas_format(params: Optional[dict]) -> bool:
-    """Check if params indicate canvas render mode."""
+# Skills that should never use canvas JSON format (need natural markdown output)
+CANVAS_FORMAT_EXCLUDED_SKILLS = {
+    "askuserquestions",  # Needs checkbox markdown for interactive responses
+}
+
+
+def should_use_canvas_format(params: Optional[dict], skill_name: Optional[str] = None) -> bool:
+    """Check if params indicate canvas render mode.
+
+    Some skills are excluded from canvas format because they need
+    natural markdown output (e.g., askuserquestions needs checkboxes).
+    """
     if not params:
         return False
+
+    # Check exclusion list
+    if skill_name and skill_name.lower() in CANVAS_FORMAT_EXCLUDED_SKILLS:
+        return False
+
     render = params.get("render", "").lower()
     return render == "canvas"
