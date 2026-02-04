@@ -393,8 +393,22 @@ export default function SubsectionViewer({
             position: 'relative',
           }}>
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(parsedResponse.rawContent);
+              onClick={async (e) => {
+                e.stopPropagation();
+                const text = parsedResponse.rawContent;
+                try {
+                  await navigator.clipboard.writeText(text);
+                } catch {
+                  // Fallback for non-HTTPS or permission denied
+                  const textarea = document.createElement('textarea');
+                  textarea.value = text;
+                  textarea.style.position = 'fixed';
+                  textarea.style.opacity = '0';
+                  document.body.appendChild(textarea);
+                  textarea.select();
+                  document.execCommand('copy');
+                  document.body.removeChild(textarea);
+                }
                 setCopied(true);
                 setTimeout(() => setCopied(false), 2000);
               }}
@@ -410,7 +424,7 @@ export default function SubsectionViewer({
                 fontSize: '12px',
                 fontWeight: 500,
                 cursor: 'pointer',
-                zIndex: 1,
+                zIndex: 10,
               }}
             >
               {copied ? '\u2713 Copied' : 'Copy'}
