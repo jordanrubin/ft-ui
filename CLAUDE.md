@@ -2,12 +2,14 @@
 
 ## Bug Fixing Process
 
-When encountering any bug (errors, crashes, functionality failures):
+**MANDATORY**: When fixing any bug or adding any feature:
 
-1. **Create a failing test** that replicates the bug
-2. **Spawn parallel subagents** that each attempt different fix strategies
-3. **Validate** the fix against the test
-4. **Merge** the successful fix
+1. **Write a test FIRST** that demonstrates the expected behavior
+2. For bugs: test should fail before fix, pass after
+3. For features: test should verify the new functionality
+4. Run `pytest` to verify tests pass before committing
+
+Never skip tests. If you catch yourself fixing something without a test, stop and write the test first.
 
 ## Project Structure
 
