@@ -478,18 +478,48 @@ function detectSectionType(header: string, _body: string): SubsectionType | null
 function extractNumberedItemsFromBody(body: string): Array<{ num: number; title: string; description: string }> {
   const items: Array<{ num: number; title: string; description: string }> = [];
 
-  // Pattern: "1. **Title**: desc" or "1. **Title**\ndesc" or "1. Title\ndesc"
-  // Stop at next numbered item or end
-  const pattern = /(?:^|\n)(\d+)\.\s*\*?\*?([^*\n]+?)\*?\*?(?:\s*[:\-–]\s*|\s*\n)([\s\S]*?)(?=\n\d+\.\s|$)/g;
+  // Two-pass approach to handle bold formatting correctly:
+  // 1. First try bold titles: "1. **Title with-hyphens**" followed by separator
+  // 2. Then try plain titles: "1. Title" followed by separator
+  //
+  // The key insight: when we have **bold text**, we must capture everything
+  // between the ** markers, including hyphens. A non-greedy pattern would
+  // incorrectly split "trade-offs" at the hyphen.
 
+  // Pattern for bold titles: "1. **Title**" followed by optional separator and description
+  // The ([^*]+) captures everything between ** including hyphens
+  const boldPattern = /(?:^|\n)(\d+)\.\s*\*\*([^*]+)\*\*(?:\s*[:\-–]\s*|\s*\n?)([\s\S]*?)(?=\n\d+\.\s|$)/g;
+
+  // Pattern for plain titles (no bold): "1. Title:" or "1. Title\n"
+  const plainPattern = /(?:^|\n)(\d+)\.\s*([^*\n:–-]+)(?:\s*[:\-–]\s*|\s*\n)([\s\S]*?)(?=\n\d+\.\s|$)/g;
+
+  // Track which numbers we've already matched
+  const matchedNums = new Set<number>();
+
+  // First pass: extract bold titles
   let match;
-  while ((match = pattern.exec(body)) !== null) {
+  while ((match = boldPattern.exec(body)) !== null) {
     const num = parseInt(match[1], 10);
-    let title = match[2].trim();
+    const title = match[2].trim();
     const description = match[3].trim();
 
-    // Clean up: remove trailing ** from title
-    title = title.replace(/\*\*$/, '').trim();
+    // Skip process/meta steps
+    if (/^step\s*\d/i.test(title)) continue;
+    if (title.length < 3) continue;
+
+    matchedNums.add(num);
+    items.push({ num, title, description });
+  }
+
+  // Second pass: extract plain titles (only for numbers not already matched)
+  while ((match = plainPattern.exec(body)) !== null) {
+    const num = parseInt(match[1], 10);
+
+    // Skip if we already matched this number with bold formatting
+    if (matchedNums.has(num)) continue;
+
+    const title = match[2].trim();
+    const description = match[3].trim();
 
     // Skip process/meta steps
     if (/^step\s*\d/i.test(title)) continue;
@@ -497,6 +527,9 @@ function extractNumberedItemsFromBody(body: string): Array<{ num: number; title:
 
     items.push({ num, title, description });
   }
+
+  // Sort by number to maintain order
+  items.sort((a, b) => a.num - b.num);
 
   return items;
 }
