@@ -54,6 +54,7 @@ class SkillRun(BaseModel):
     skill_name: str
     node_id: str
     params: dict = {}
+    answers: dict[str, str] = {}  # subsection_id -> user answer (from askuserquestions)
 
 
 class ChainRun(BaseModel):
@@ -68,6 +69,7 @@ class SkillRunOnSelection(BaseModel):
     node_id: str
     selected_content: str
     params: dict = {}
+    answers: dict[str, str] = {}  # subsection_id -> user answer
 
 
 class SkillRunOnMultiple(BaseModel):
@@ -842,6 +844,13 @@ async def run_skill(req: SkillRun):
     # gather context
     context_nodes = state.canvas.get_context_for_operation(focus.id)
     context_text = state.format_context(context_nodes)
+
+    # include user answers if provided (from askuserquestions responses)
+    if req.answers:
+        answer_text = "\n\n--- USER ANSWERS ---\n"
+        for q_id, answer in req.answers.items():
+            answer_text += f"- {q_id}: {answer}\n"
+        context_text += answer_text
 
     # build prompt and call api
     prompt = skill.build_prompt(context_text, req.params)

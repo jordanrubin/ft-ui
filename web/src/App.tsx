@@ -161,11 +161,23 @@ export default function App() {
     setSelectedNode(null);
   }, []);
 
+  // Helper to load answers from localStorage for a node
+  const loadNodeAnswers = (nodeId: string): Record<string, string> => {
+    try {
+      const stored = localStorage.getItem(`rf-answers-${nodeId}`);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  };
+
   const handleSkillRun = useCallback(
     async (skillName: string) => {
       if (!selectedNode) return;
       const opId = `${skillName}-${Date.now()}`;
       const nodeId = selectedNode.id;
+      // Load any user answers for this node (from askuserquestions)
+      const answers = loadNodeAnswers(nodeId);
       // Don't close drawer - allow queuing more operations
       startOperation(opId, skillName);
       setError(null);
@@ -174,7 +186,7 @@ export default function App() {
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
-          const newNode = await skillApi.run(skillName, nodeId);
+          const newNode = await skillApi.run(skillName, nodeId, {}, answers);
           updateOperationStage(opId, 'processing');
           await refreshCanvas();
           // Don't auto-select result when running concurrent ops
@@ -196,13 +208,14 @@ export default function App() {
       if (!selectedNode) return;
       const opId = `${skillName}-sel-${Date.now()}`;
       const nodeId = selectedNode.id;
+      const answers = loadNodeAnswers(nodeId);
       startOperation(opId, skillName);
       setError(null);
 
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
-          const newNode = await skillApi.runOnSelection(skillName, nodeId, selectedContent);
+          const newNode = await skillApi.runOnSelection(skillName, nodeId, selectedContent, {}, answers);
           updateOperationStage(opId, 'processing');
           await refreshCanvas();
           if (runningOps.size <= 1 && newNode?.id) {

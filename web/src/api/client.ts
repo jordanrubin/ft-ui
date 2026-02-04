@@ -233,17 +233,18 @@ const DEFAULT_SKILL_PARAMS = { render: 'canvas', verbosity: 0 };
 export const skillApi = {
   list: () => request<SkillInfo[]>('/skills'),
 
-  run: (skillName: string, nodeId: string, params: Record<string, unknown> = {}) =>
+  run: (skillName: string, nodeId: string, params: Record<string, unknown> = {}, answers: Record<string, string> = {}) =>
     request<CanvasNode>('/skill/run', {
       method: 'POST',
       body: JSON.stringify({
         skill_name: skillName,
         node_id: nodeId,
         params: { ...DEFAULT_SKILL_PARAMS, ...params },
+        answers,
       }),
     }),
 
-  runOnSelection: (skillName: string, nodeId: string, selectedContent: string, params: Record<string, unknown> = {}) =>
+  runOnSelection: (skillName: string, nodeId: string, selectedContent: string, params: Record<string, unknown> = {}, answers: Record<string, string> = {}) =>
     request<CanvasNode>('/skill/run-on-selection', {
       method: 'POST',
       body: JSON.stringify({
@@ -251,6 +252,7 @@ export const skillApi = {
         node_id: nodeId,
         selected_content: selectedContent,
         params: { ...DEFAULT_SKILL_PARAMS, ...params },
+        answers,
       }),
     }),
 
