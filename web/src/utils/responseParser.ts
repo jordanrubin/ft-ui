@@ -15,6 +15,17 @@ function generateId(): string {
   return `sub_${++idCounter}_${Date.now().toString(36)}`;
 }
 
+// Generate deterministic ID from content (for answer persistence)
+function hashId(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return `q_${Math.abs(hash).toString(36)}`;
+}
+
 // Antithesis type detection
 const ANTITHESIS_TYPE_PATTERNS: Record<string, { pattern: RegExp; tag: SubsectionTag }> = {
   'rival thesis': {
@@ -312,7 +323,7 @@ function parseAskUserQuestionsOutput(content: string): ParsedResponse {
     const explanation = explanationMatch ? explanationMatch[1].trim() : '';
 
     subsections.push({
-      id: generateId(),
+      id: hashId(question),  // Deterministic ID for answer persistence
       type: 'question',
       title: question,
       content: explanation,
@@ -334,7 +345,7 @@ function parseAskUserQuestionsOutput(content: string): ParsedResponse {
       if (/step|identify|consider/i.test(question) && question.length < 30) continue;
 
       subsections.push({
-        id: generateId(),
+        id: hashId(question),  // Deterministic ID for answer persistence
         type: 'question',
         title: question,
         content: explanation,
