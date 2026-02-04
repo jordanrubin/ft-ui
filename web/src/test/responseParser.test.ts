@@ -151,5 +151,40 @@ The claim is that X leads to Y.
 
       expect(result.subsections.length).toBeGreaterThanOrEqual(3);
     });
+
+    it('correctly parses titles with hyphens in compound words', () => {
+      // This is the actual content from the bug report - "trade-offs" was being
+      // split at the hyphen, resulting in title "Monitor vs. laptop trade"
+      // and content starting with "offs**"
+      const content = `**Key considerations:**
+1. **What's driving the decision?** Are you experiencing performance bottlenecks?
+2. **What's your work profile?** The right equipment choice depends heavily on your work.
+3. **Monitor vs. laptop trade-offs** - DisplayLink can have limitations (compression, no hardware acceleration).`;
+
+      const result = parseSkillResponse(content);
+
+      // Find the subsection that should have "trade-offs" in the title
+      const tradeOffSection = result.subsections.find(s =>
+        s.title.toLowerCase().includes('monitor') || s.title.toLowerCase().includes('trade')
+      );
+
+      expect(tradeOffSection).toBeDefined();
+      // The title should contain the FULL compound word "trade-offs", not just "trade"
+      expect(tradeOffSection!.title).toContain('trade-offs');
+      // The content should NOT start with "offs"
+      expect(tradeOffSection!.content).not.toMatch(/^offs/);
+    });
+
+    it('preserves hyphens in bold titles followed by dash separator', () => {
+      // Test case: "**word-with-hyphen** - description"
+      const content = `1. **Cost-benefit analysis** - Evaluate the financial impact.
+2. **Risk-reward ratio** - Consider potential outcomes.`;
+
+      const result = parseSkillResponse(content);
+
+      expect(result.subsections.length).toBe(2);
+      expect(result.subsections[0].title).toBe('Cost-benefit analysis');
+      expect(result.subsections[1].title).toBe('Risk-reward ratio');
+    });
   });
 });
