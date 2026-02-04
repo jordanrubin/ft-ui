@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { CanvasNode, ParsedResponse, Subsection, SubsectionType, ImportanceLevel } from '../types';
 import { parseSkillResponse } from '../utils/responseParser';
 import { parseCanvasResponse, type CanvasArtifact, type CanvasBlock, type CanvasItem, type Importance } from '../types/canvasArtifact';
@@ -48,16 +48,19 @@ export default function SubsectionViewer({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
 
-  // Load answers from localStorage on mount
+  // Load answers from localStorage
   const storageKey = `rf-answers-${node.id}`;
-  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Reload answers when node changes
+  useEffect(() => {
     try {
       const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : {};
+      setAnswers(stored ? JSON.parse(stored) : {});
     } catch {
-      return {};
+      setAnswers({});
     }
-  });
+  }, [storageKey]);
 
   // Try to parse as CanvasArtifact first, then fall back to legacy parser
   const { artifact, parsedResponse } = useMemo((): { artifact: CanvasArtifact | null; parsedResponse: ParsedResponse } => {
