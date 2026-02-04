@@ -151,7 +151,7 @@ export default function App() {
       const node = canvas?.nodes[nodeId];
       if (node) {
         setSelectedNode(node);
-        setShowSidebar(true);
+        // Don't force showSidebar - skills pane renders independently
       }
     },
     [canvas]
@@ -534,58 +534,63 @@ export default function App() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', background: '#0d1117' }}>
-      {/* Sidebar */}
-      {showSidebar && (
+      {/* Skills Pane Sidebar - always shows when node selected, independent of showSidebar */}
+      {showSkillsPane && selectedNode && (
         <div
           style={{
-            width: showSkillsPane ? '180px' : '260px',
+            width: '180px',
             background: '#161b22',
             borderRight: '1px solid #30363d',
             display: 'flex',
             flexDirection: 'column',
-            transition: 'width 0.15s ease',
+          }}
+        >
+          <SkillsPane
+            node={selectedNode}
+            skills={skills}
+            selectedContent={selectedSubsectionContent}
+            onRunSkill={async (skillName, content) => {
+              if (skillName.startsWith('chat:')) {
+                // Freeform chat
+                const prompt = skillName.slice(5);
+                await handleChatSubmit(prompt);
+              } else {
+                // Regular skill
+                if (content) {
+                  await handleSkillRunOnSelection(skillName, content);
+                } else {
+                  await handleSkillRun(skillName);
+                }
+              }
+            }}
+            onClearSelection={() => setSelectedSubsectionContent(undefined)}
+            onClose={() => {
+              setSelectedNode(null);
+              setSelectedSubsectionContent(undefined);
+            }}
+            isRunning={isRunning}
+          />
+        </div>
+      )}
+
+      {/* Main Sidebar - only when no node selected and sidebar is open */}
+      {showSidebar && !showSkillsPane && (
+        <div
+          style={{
+            width: '260px',
+            background: '#161b22',
+            borderRight: '1px solid #30363d',
+            display: 'flex',
+            flexDirection: 'column',
           }}
         >
           {/* Header */}
           <div style={{ padding: '16px', borderBottom: '1px solid #30363d' }}>
             <h1 style={{ margin: 0, fontSize: '18px', color: '#fff' }}>Runeforge Canvas</h1>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
-              {showSkillsPane ? 'run skills' : 'reasoning-as-graph'}
+              reasoning-as-graph
             </p>
           </div>
-
-          {/* Skills Pane - shown when node is selected */}
-          {showSkillsPane && selectedNode && (
-            <SkillsPane
-              node={selectedNode}
-              skills={skills}
-              selectedContent={selectedSubsectionContent}
-              onRunSkill={async (skillName, content) => {
-                if (skillName.startsWith('chat:')) {
-                  // Freeform chat
-                  const prompt = skillName.slice(5);
-                  await handleChatSubmit(prompt);
-                } else {
-                  // Regular skill
-                  if (content) {
-                    await handleSkillRunOnSelection(skillName, content);
-                  } else {
-                    await handleSkillRun(skillName);
-                  }
-                }
-              }}
-              onClearSelection={() => setSelectedSubsectionContent(undefined)}
-              onClose={() => {
-                setSelectedNode(null);
-                setSelectedSubsectionContent(undefined);
-              }}
-              isRunning={isRunning}
-            />
-          )}
-
-          {/* Canvas operations - shown when no node selected */}
-          {!showSkillsPane && (
-            <>
           {/* Actions */}
           <div style={{ padding: '12px', borderBottom: '1px solid #30363d' }}>
             <button
@@ -987,8 +992,6 @@ export default function App() {
                 </button>
               )}
             </div>
-          )}
-            </>
           )}
         </div>
       )}
