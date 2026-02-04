@@ -293,6 +293,10 @@ export default function SubsectionCard({
                             onClick={(e) => {
                               e.stopPropagation();
                               setAnswerText(option);
+                              // Auto-save when selecting an option
+                              if (onAnswer) {
+                                onAnswer(subsection.id, option);
+                              }
                             }}
                             style={{
                               padding: '10px 14px',
