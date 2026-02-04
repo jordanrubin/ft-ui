@@ -54,6 +54,9 @@ export default function App() {
   const [showCanvasPicker, setShowCanvasPicker] = useState(false);
   const [showDirectoryInput, setShowDirectoryInput] = useState(false);
   const [directoryPath, setDirectoryPath] = useState('');
+  const [showNewCanvasModal, setShowNewCanvasModal] = useState(false);
+  const [newCanvasName, setNewCanvasName] = useState('');
+  const [newCanvasGoal, setNewCanvasGoal] = useState('');
   const [selectedSubsectionContent, setSelectedSubsectionContent] = useState<string | undefined>();
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -363,19 +366,20 @@ export default function App() {
   }, [refreshCanvas, canvas]);
 
   const handleCreateCanvas = useCallback(async () => {
-    const name = prompt('Canvas name:');
-    const goal = prompt('What are you trying to build?');
-    if (name && goal) {
-      try {
-        const newCanvas = await canvasApi.create(name, goal);
-        setCanvas(newCanvas);
-        setSelectedNode(null);
-        setCanvasList(await canvasApi.list());
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Create failed');
-      }
+    if (!newCanvasName.trim() || !newCanvasGoal.trim()) return;
+    try {
+      const newCanvas = await canvasApi.create(newCanvasName.trim(), newCanvasGoal.trim());
+      setCanvas(newCanvas);
+      setSelectedNode(null);
+      setShowNewCanvasModal(false);
+      setNewCanvasName('');
+      setNewCanvasGoal('');
+      setShowSidebar(false); // Collapse - new canvas has content
+      setCanvasList(await canvasApi.list());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Create failed');
     }
-  }, []);
+  }, [newCanvasName, newCanvasGoal]);
 
   const handleLoadCanvas = useCallback(async (path: string) => {
     try {
@@ -585,7 +589,7 @@ export default function App() {
           {/* Actions */}
           <div style={{ padding: '12px', borderBottom: '1px solid #30363d' }}>
             <button
-              onClick={handleCreateCanvas}
+              onClick={() => setShowNewCanvasModal(true)}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -1143,6 +1147,126 @@ export default function App() {
           onSkillRunOnMultiple={handleSkillRunOnMultiple}
           onClearMultiSelection={handleClearMultiSelection}
         />
+      )}
+
+      {/* New Canvas Modal */}
+      {showNewCanvasModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => setShowNewCanvasModal(false)}
+        >
+          <div
+            style={{
+              background: '#161b22',
+              borderRadius: '12px',
+              border: '1px solid #30363d',
+              padding: '24px',
+              width: '480px',
+              maxWidth: '90vw',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ margin: '0 0 20px', color: '#e6edf3', fontSize: '18px' }}>
+              New Canvas
+            </h2>
+
+            {/* Canvas name */}
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: '12px', marginBottom: '6px' }}>
+                Canvas name
+              </label>
+              <input
+                type="text"
+                value={newCanvasName}
+                onChange={(e) => setNewCanvasName(e.target.value)}
+                placeholder="my-project"
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  background: '#0d1117',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#e6edf3',
+                  fontSize: '14px',
+                }}
+              />
+            </div>
+
+            {/* Goal/root content */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: '12px', marginBottom: '6px' }}>
+                What are you building?
+              </label>
+              <div style={{ color: '#6e7681', fontSize: '11px', marginBottom: '8px' }}>
+                This becomes your root node. Give enough detail for skills to work with.
+              </div>
+              <textarea
+                value={newCanvasGoal}
+                onChange={(e) => setNewCanvasGoal(e.target.value)}
+                placeholder="I am building a..."
+                rows={6}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  background: '#0d1117',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#e6edf3',
+                  fontSize: '14px',
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                }}
+              />
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  setShowNewCanvasModal(false);
+                  setNewCanvasName('');
+                  setNewCanvasGoal('');
+                }}
+                style={{
+                  padding: '10px 16px',
+                  background: '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '6px',
+                  color: '#c9d1d9',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateCanvas}
+                disabled={!newCanvasName.trim() || !newCanvasGoal.trim()}
+                style={{
+                  padding: '10px 16px',
+                  background: newCanvasName.trim() && newCanvasGoal.trim() ? '#238636' : '#21262d',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: '#fff',
+                  cursor: newCanvasName.trim() && newCanvasGoal.trim() ? 'pointer' : 'not-allowed',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                }}
+              >
+                Create Canvas
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
