@@ -1,4 +1,4 @@
-import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus } from '../types/canvas';
+import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, SkillsetInfo, TemplateInfo, Statistics, AppStatus } from '../types/canvas';
 
 const API_BASE = '/api';
 
@@ -295,4 +295,36 @@ export const planApi = {
 // Template operations
 export const templateApi = {
   list: () => request<TemplateInfo[]>('/templates'),
+};
+
+// Skillset operations
+export const skillsetApi = {
+  // List all user-added skillsets
+  list: () => request<SkillsetInfo[]>('/skillsets'),
+
+  // Add a skillset from local directory
+  addLocal: (path: string, name?: string) =>
+    request<SkillsetInfo>('/skillsets/local', {
+      method: 'POST',
+      body: JSON.stringify({ path, name }),
+    }),
+
+  // Add a skillset from GitHub repository
+  addGithub: (url: string, name?: string) =>
+    request<SkillsetInfo>('/skillsets/github', {
+      method: 'POST',
+      body: JSON.stringify({ url, name }),
+    }),
+
+  // Remove a skillset
+  remove: (name: string) =>
+    request<{ removed: string }>(`/skillsets/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+
+  // Refresh a GitHub skillset (pull latest)
+  refresh: (name: string) =>
+    request<SkillsetInfo>(`/skillsets/${encodeURIComponent(name)}/refresh`, {
+      method: 'POST',
+    }),
 };

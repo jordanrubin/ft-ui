@@ -29,7 +29,8 @@ from ..core.models import (
     list_templates,
     get_template,
 )
-from ..core.skills import SkillLoader, SkillChain, get_default_loader
+from ..core.skills import SkillLoader, SkillChain, get_default_loader, CompositeSkillLoader
+from ..core.skillsets import SkillsetManager, Skillset, get_skillset_manager
 from ..core.client import ClaudeClient, MockClient, ClientProtocol
 
 
@@ -206,6 +207,30 @@ class SkillInfo(BaseModel):
     description: str
 
 
+class SkillsetInfo(BaseModel):
+    """skillset info for listing."""
+    name: str
+    source: str
+    source_type: str  # "local" or "github"
+    local_path: Optional[str] = None
+    branch: Optional[str] = None
+    added_at: str
+    last_refreshed: Optional[str] = None
+    skill_count: int = 0
+
+
+class SkillsetAddLocal(BaseModel):
+    """request to add a local skillset."""
+    path: str
+    name: Optional[str] = None
+
+
+class SkillsetAddGithub(BaseModel):
+    """request to add a github skillset."""
+    url: str
+    name: Optional[str] = None
+
+
 # --- app state ---
 
 class AppState:
@@ -219,7 +244,10 @@ class AppState:
     ):
         self.canvas: Optional[Canvas] = None
         self.canvas_path: Optional[Path] = None
-        self.skill_loader = get_default_loader(skills_dir)
+        self._skills_dir = skills_dir
+        self._base_loader = get_default_loader(skills_dir)
+        self.skillset_manager = get_skillset_manager()
+        self.skill_loader = self._build_skill_loader()
         self.mock = mock
         self._client: Optional[ClientProtocol] = None
 
@@ -230,6 +258,18 @@ class AppState:
         # Auto-save configuration
         self.autosave_interval = autosave_interval
         self._autosave_task: Optional[asyncio.Task] = None
+
+    def _build_skill_loader(self) -> CompositeSkillLoader:
+        """build skill loader combining base skills and user skillsets."""
+        # start with base loaders
+        loaders = list(self._base_loader.loaders)
+        # add loaders from user skillsets
+        loaders.extend(self.skillset_manager.get_skill_loaders())
+        return CompositeSkillLoader(loaders)
+
+    def reload_skills(self) -> None:
+        """reload skill loader (call after adding/removing skillsets)."""
+        self.skill_loader = self._build_skill_loader()
 
     @property
     def client(self) -> ClientProtocol:
@@ -437,6 +477,86 @@ async def list_skills():
         )
         for s in state.skill_loader.list_skills()
     ]
+
+
+# --- skillset endpoints ---
+
+
+def _skillset_to_info(skillset: Skillset) -> SkillsetInfo:
+    """convert Skillset to SkillsetInfo with skill count."""
+    skill_count = 0
+    path = skillset.get_skills_path()
+    if path.exists():
+        loader = SkillLoader(path)
+        skill_count = len(loader.load())
+    return SkillsetInfo(
+        name=skillset.name,
+        source=skillset.source,
+        source_type=skillset.source_type,
+        local_path=skillset.local_path,
+        branch=skillset.branch,
+        added_at=skillset.added_at,
+        last_refreshed=skillset.last_refreshed,
+        skill_count=skill_count,
+    )
+
+
+@app.get("/skillsets", response_model=list[SkillsetInfo])
+async def list_skillsets():
+    """list all user-added skillsets."""
+    return [_skillset_to_info(s) for s in state.skillset_manager.list()]
+
+
+@app.post("/skillsets/local", response_model=SkillsetInfo)
+async def add_local_skillset(req: SkillsetAddLocal):
+    """add a skillset from a local directory."""
+    path = Path(req.path).expanduser()
+    if not path.exists():
+        raise HTTPException(status_code=400, detail=f"path does not exist: {req.path}")
+    if not path.is_dir():
+        raise HTTPException(status_code=400, detail=f"path is not a directory: {req.path}")
+
+    try:
+        skillset = state.skillset_manager.add_local(str(path), name=req.name)
+        state.reload_skills()
+        return _skillset_to_info(skillset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/skillsets/github", response_model=SkillsetInfo)
+async def add_github_skillset(req: SkillsetAddGithub):
+    """add a skillset from a github repository."""
+    try:
+        skillset = state.skillset_manager.add_github(req.url, name=req.name)
+        state.reload_skills()
+        return _skillset_to_info(skillset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/skillsets/{name}")
+async def remove_skillset(name: str):
+    """remove a skillset by name."""
+    if not state.skillset_manager.remove(name):
+        raise HTTPException(status_code=404, detail=f"skillset not found: {name}")
+    state.reload_skills()
+    return {"removed": name}
+
+
+@app.post("/skillsets/{name}/refresh", response_model=SkillsetInfo)
+async def refresh_skillset(name: str):
+    """refresh a github skillset by pulling latest changes."""
+    try:
+        skillset = state.skillset_manager.refresh(name)
+        state.reload_skills()
+        return _skillset_to_info(skillset)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/canvas", response_model=CanvasResponse)

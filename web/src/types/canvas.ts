@@ -42,6 +42,17 @@ export interface SkillInfo {
   description: string;
 }
 
+export interface SkillsetInfo {
+  name: string;
+  source: string;
+  source_type: 'local' | 'github';
+  local_path: string | null;
+  branch: string | null;
+  added_at: string;
+  last_refreshed: string | null;
+  skill_count: number;
+}
+
 export interface TemplateInfo {
   name: string;
   display_name: string;

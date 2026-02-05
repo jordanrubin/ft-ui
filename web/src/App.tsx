@@ -4,9 +4,10 @@ import { ReactFlowProvider } from '@xyflow/react';
 import CanvasView from './components/CanvasView';
 import NodeDrawer from './components/NodeDrawer';
 import SkillsPane from './components/SkillsPane';
+import SkillsetPane from './components/SkillsetPane';
 import Login from './components/Login';
-import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
-import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem } from './types/canvas';
+import { canvasApi, nodeApi, skillApi, skillsetApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
+import type { Canvas, CanvasNode, SkillInfo, SkillsetInfo, TemplateInfo, CanvasListItem } from './types/canvas';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -14,6 +15,7 @@ export default function App() {
   });
   const [canvas, setCanvas] = useState<Canvas | null>(null);
   const [skills, setSkills] = useState<SkillInfo[]>([]);
+  const [skillsets, setSkillsets] = useState<SkillsetInfo[]>([]);
   const [_templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [canvasList, setCanvasList] = useState<CanvasListItem[]>([]);
   const [selectedNode, setSelectedNode] = useState<CanvasNode | null>(null);
@@ -68,12 +70,14 @@ export default function App() {
   useEffect(() => {
     Promise.all([
       skillApi.list().catch(() => []),
+      skillsetApi.list().catch(() => []),
       templateApi.list().catch(() => []),
       canvasApi.list().catch(() => []),
       canvasApi.get().catch(() => null),
       planFileApi.list().catch(() => []),
-    ]).then(([skills, templates, list, currentCanvas, plans]) => {
+    ]).then(([skills, skillsets, templates, list, currentCanvas, plans]) => {
       setSkills(skills);
+      setSkillsets(skillsets);
       setTemplates(templates);
       setCanvasList(list);
       setPlanFiles(plans);
@@ -617,6 +621,11 @@ be concise and actionable.`;
               setSelectedSubsectionContent(undefined);
             }}
             isRunning={isRunning}
+          />
+          <SkillsetPane
+            skillsets={skillsets}
+            onSkillsetsChange={setSkillsets}
+            onSkillsChange={setSkills}
           />
         </div>
       )}
