@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Subsection } from '../types';
 
 interface SubsectionCardProps {
@@ -35,7 +35,13 @@ export default function SubsectionCard({
   const [answerText, setAnswerText] = useState(subsection.answer || '');
   const [isAnswering, setIsAnswering] = useState(false);
 
+  // Sync answerText when subsection.answer changes (e.g., on reopen)
+  useEffect(() => {
+    setAnswerText(subsection.answer || '');
+  }, [subsection.answer]);
+
   const isQuestion = subsection.type === 'question';
+  const hasAnswer = !!subsection.answer;
 
   const handleClick = () => {
     onSelect(subsection.id);
@@ -241,174 +247,195 @@ export default function SubsectionCard({
           </div>
         )}
 
-        {/* Answer section for questions */}
-        {isQuestion && (
-          <div style={{ marginTop: '12px' }}>
-            {subsection.answer && !isAnswering ? (
-              <div style={{
-                padding: '10px 12px',
-                background: '#ecfdf5',
-                border: '1px solid #a7f3d0',
-                borderRadius: '6px',
-              }}>
-                <div style={{ fontSize: '11px', color: '#047857', fontWeight: 600, marginBottom: '4px' }}>
-                  YOUR ANSWER:
+        {/* Response section - shown for all subsections */}
+        <div style={{ marginTop: '12px' }}>
+          {hasAnswer && !isAnswering ? (
+            // Saved response display
+            <div style={{
+              padding: '10px 12px',
+              background: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+              borderRadius: '6px',
+            }}>
+              <div style={{ fontSize: '11px', color: '#047857', fontWeight: 600, marginBottom: '4px' }}>
+                YOUR RESPONSE:
+              </div>
+              <div style={{ fontSize: '14px', color: '#065f46', lineHeight: 1.5 }}>
+                {subsection.answer}
+              </div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAnswering(true);
+                }}
+                style={{
+                  marginTop: '8px',
+                  padding: '4px 8px',
+                  background: 'transparent',
+                  border: '1px solid #a7f3d0',
+                  borderRadius: '4px',
+                  color: '#047857',
+                  fontSize: '12px',
+                  cursor: 'pointer',
+                }}
+              >
+                Edit
+              </button>
+            </div>
+          ) : isAnswering || isQuestion ? (
+            // Input mode - always show for questions, or when editing
+            <div onClick={(e) => e.stopPropagation()}>
+              {/* Multiple choice options - only for questions */}
+              {isQuestion && subsection.options && subsection.options.length > 0 && (
+                <div style={{ marginBottom: '10px' }}>
+                  <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                    Select an option:
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {subsection.options.map((option, i) => {
+                      const isOptSelected = answerText === option;
+                      return (
+                        <button
+                          key={i}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAnswerText(option);
+                            // Auto-save when selecting an option
+                            if (onAnswer) {
+                              onAnswer(subsection.id, option);
+                            }
+                          }}
+                          style={{
+                            padding: '10px 14px',
+                            background: isOptSelected ? '#ecfdf5' : '#f9fafb',
+                            border: isOptSelected ? '2px solid #10b981' : '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            color: isOptSelected ? '#065f46' : '#374151',
+                            fontSize: '14px',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s ease',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                          }}
+                        >
+                          <span style={{
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: '50%',
+                            border: isOptSelected ? '2px solid #10b981' : '2px solid #d1d5db',
+                            background: isOptSelected ? '#10b981' : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            {isOptSelected && (
+                              <span style={{ color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>✓</span>
+                            )}
+                          </span>
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#9ca3af',
+                    marginTop: '10px',
+                    borderTop: '1px solid #e5e7eb',
+                    paddingTop: '10px',
+                  }}>
+                    Or write your own answer:
+                  </div>
                 </div>
-                <div style={{ fontSize: '14px', color: '#065f46', lineHeight: 1.5 }}>
-                  {subsection.answer}
-                </div>
+              )}
+
+              {/* Freetext input */}
+              <textarea
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                placeholder={isQuestion && subsection.options?.length ? "Type a custom answer..." : "Add your thoughts or response..."}
+                style={{
+                  width: '100%',
+                  minHeight: isQuestion && subsection.options?.length ? '40px' : '60px',
+                  padding: '10px',
+                  border: '1px solid #d1d5db',
+                  borderRadius: '6px',
+                  fontSize: '14px',
+                  lineHeight: 1.5,
+                  resize: 'vertical',
+                  fontFamily: 'inherit',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setIsAnswering(true);
+                    if (onAnswer && answerText.trim()) {
+                      onAnswer(subsection.id, answerText.trim());
+                      setIsAnswering(false);
+                    }
                   }}
+                  disabled={!answerText.trim()}
                   style={{
-                    marginTop: '8px',
-                    padding: '4px 8px',
-                    background: 'transparent',
-                    border: '1px solid #a7f3d0',
+                    padding: '6px 12px',
+                    background: answerText.trim() ? '#059669' : '#9ca3af',
+                    border: 'none',
                     borderRadius: '4px',
-                    color: '#047857',
-                    fontSize: '12px',
-                    cursor: 'pointer',
+                    color: '#fff',
+                    fontSize: '13px',
+                    cursor: answerText.trim() ? 'pointer' : 'not-allowed',
                   }}
                 >
-                  Edit
+                  Save
                 </button>
-              </div>
-            ) : (
-              <div onClick={(e) => e.stopPropagation()}>
-                {/* Multiple choice options */}
-                {subsection.options && subsection.options.length > 0 && (
-                  <div style={{ marginBottom: '10px' }}>
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
-                      Select an option:
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {subsection.options.map((option, i) => {
-                        const isSelected = answerText === option;
-                        return (
-                          <button
-                            key={i}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAnswerText(option);
-                              // Auto-save when selecting an option
-                              if (onAnswer) {
-                                onAnswer(subsection.id, option);
-                              }
-                            }}
-                            style={{
-                              padding: '10px 14px',
-                              background: isSelected ? '#ecfdf5' : '#f9fafb',
-                              border: isSelected ? '2px solid #10b981' : '1px solid #e5e7eb',
-                              borderRadius: '8px',
-                              color: isSelected ? '#065f46' : '#374151',
-                              fontSize: '14px',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '10px',
-                            }}
-                          >
-                            <span style={{
-                              width: '18px',
-                              height: '18px',
-                              borderRadius: '50%',
-                              border: isSelected ? '2px solid #10b981' : '2px solid #d1d5db',
-                              background: isSelected ? '#10b981' : 'transparent',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                            }}>
-                              {isSelected && (
-                                <span style={{ color: '#fff', fontSize: '10px', fontWeight: 'bold' }}>✓</span>
-                              )}
-                            </span>
-                            {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div style={{
-                      fontSize: '12px',
-                      color: '#9ca3af',
-                      marginTop: '10px',
-                      borderTop: '1px solid #e5e7eb',
-                      paddingTop: '10px',
-                    }}>
-                      Or write your own answer:
-                    </div>
-                  </div>
-                )}
-
-                {/* Freetext input */}
-                <textarea
-                  value={answerText}
-                  onChange={(e) => setAnswerText(e.target.value)}
-                  placeholder={subsection.options?.length ? "Type a custom answer..." : "Type your answer here..."}
-                  style={{
-                    width: '100%',
-                    minHeight: subsection.options?.length ? '40px' : '60px',
-                    padding: '10px',
-                    border: '1px solid #d1d5db',
-                    borderRadius: '6px',
-                    fontSize: '14px',
-                    lineHeight: 1.5,
-                    resize: 'vertical',
-                    fontFamily: 'inherit',
-                  }}
-                />
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                {(hasAnswer || (!isQuestion && isAnswering)) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (onAnswer && answerText.trim()) {
-                        onAnswer(subsection.id, answerText.trim());
-                        setIsAnswering(false);
-                      }
+                      setAnswerText(subsection.answer || '');
+                      setIsAnswering(false);
                     }}
-                    disabled={!answerText.trim()}
                     style={{
                       padding: '6px 12px',
-                      background: answerText.trim() ? '#059669' : '#9ca3af',
-                      border: 'none',
+                      background: '#f3f4f6',
+                      border: '1px solid #d1d5db',
                       borderRadius: '4px',
-                      color: '#fff',
+                      color: '#374151',
                       fontSize: '13px',
-                      cursor: answerText.trim() ? 'pointer' : 'not-allowed',
+                      cursor: 'pointer',
                     }}
                   >
-                    Save Answer
+                    Cancel
                   </button>
-                  {subsection.answer && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setAnswerText(subsection.answer || '');
-                        setIsAnswering(false);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        background: '#f3f4f6',
-                        border: '1px solid #d1d5db',
-                        borderRadius: '4px',
-                        color: '#374151',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ) : (
+            // Collapsed state for non-questions - click to respond
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsAnswering(true);
+              }}
+              style={{
+                padding: '8px 12px',
+                background: '#f9fafb',
+                border: '1px dashed #d1d5db',
+                borderRadius: '6px',
+                color: '#6b7280',
+                fontSize: '13px',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left',
+              }}
+            >
+              + Add response...
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

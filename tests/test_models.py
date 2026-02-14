@@ -50,6 +50,45 @@ class TestCanvasNode:
         assert len(node.content_compressed) <= 100
         assert node.content_compressed.endswith("...")
 
+    def test_compress_json_artifact_extracts_summary(self):
+        """JSON canvas artifact extracts summary value, not JSON key."""
+        json_content = '''```json
+{
+  "summary": "Home office purchase rhymes with budget allocation",
+  "blocks": [
+    {
+      "kind": "rhyme_candidates",
+      "title": "Structural Pattern Matches",
+      "items": []
+    }
+  ]
+}
+```'''
+        node = CanvasNode.create_operation(
+            operation="@rhyme",
+            content=json_content,
+            parent_id="parent123",
+            context_snapshot=["parent123"],
+        )
+        # Should extract the summary VALUE, not the JSON key
+        assert '"summary"' not in node.content_compressed
+        assert 'Home office purchase' in node.content_compressed
+
+    def test_compress_json_artifact_without_code_block(self):
+        """JSON artifact without markdown code block extracts summary."""
+        json_content = '''{
+  "summary": "Equipment as expiring option",
+  "blocks": []
+}'''
+        node = CanvasNode.create_operation(
+            operation="@metaphorize",
+            content=json_content,
+            parent_id="parent123",
+            context_snapshot=["parent123"],
+        )
+        assert '"summary"' not in node.content_compressed
+        assert 'Equipment as expiring option' in node.content_compressed
+
     def test_roundtrip_serialization(self):
         """node survives to_dict/from_dict."""
         original = CanvasNode.create_operation(

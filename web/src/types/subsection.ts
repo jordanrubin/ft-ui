@@ -23,7 +23,7 @@ export type StrengthLevel = 'strong' | 'moderate' | 'weak';
 
 export interface SubsectionTag {
   label: string;
-  color: 'red' | 'orange' | 'yellow' | 'blue' | 'purple' | 'gray';
+  color: 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'gray';
 }
 
 export interface Subsection {

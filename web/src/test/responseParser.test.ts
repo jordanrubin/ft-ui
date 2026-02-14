@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { parseSkillResponse } from '../utils/responseParser';
+import { parseCanvasResponse, isCanvasArtifact } from '../types/canvasArtifact';
 
 describe('parseSkillResponse', () => {
   describe('hashId determinism for answer persistence', () => {
@@ -185,6 +186,161 @@ The claim is that X leads to Y.
       expect(result.subsections.length).toBe(2);
       expect(result.subsections[0].title).toBe('Cost-benefit analysis');
       expect(result.subsections[1].title).toBe('Risk-reward ratio');
+    });
+  });
+
+  describe('canvas artifact parsing', () => {
+    it('parses @rhyme JSON artifact correctly', () => {
+      const content = `\`\`\`json
+{
+  "summary": "Home office purchase rhymes with budget allocation",
+  "blocks": [
+    {
+      "kind": "rhyme_candidates",
+      "title": "Structural Pattern Matches",
+      "items": [
+        {
+          "id": "rhyme_1",
+          "title": "Budget window as expiring option",
+          "text": "Your benefit rhymes with an expiring coupon",
+          "importance": "high",
+          "tags": ["time-bounded"]
+        }
+      ]
+    }
+  ],
+  "suggested_moves": [
+    {
+      "skill": "@dimensionalize",
+      "reason": "Extract key decision dimensions"
+    }
+  ]
+}
+\`\`\``;
+
+      const { artifact, raw } = parseCanvasResponse(content);
+
+      expect(artifact).not.toBeNull();
+      expect(artifact!.summary).toBe('Home office purchase rhymes with budget allocation');
+      expect(artifact!.blocks).toHaveLength(1);
+      expect(artifact!.blocks[0].kind).toBe('rhyme_candidates');
+      expect(artifact!.blocks[0].items).toHaveLength(1);
+      expect(artifact!.blocks[0].items[0].title).toBe('Budget window as expiring option');
+      expect(raw).toBe(content);
+    });
+
+    it('parses @dimensionalize JSON artifact correctly', () => {
+      const content = `\`\`\`json
+{
+  "summary": "Dimensionalizing home office equipment allocation",
+  "blocks": [
+    {
+      "kind": "dimensions",
+      "title": "Decision Dimensions",
+      "items": [
+        {
+          "id": "dim_1",
+          "title": "Cost efficiency",
+          "text": "Maximize value per dollar spent",
+          "importance": "critical"
+        },
+        {
+          "id": "dim_2",
+          "title": "Portability",
+          "text": "Ability to work from different locations",
+          "importance": "high"
+        }
+      ]
+    }
+  ]
+}
+\`\`\``;
+
+      const { artifact } = parseCanvasResponse(content);
+
+      expect(artifact).not.toBeNull();
+      expect(artifact!.blocks).toHaveLength(1);
+      expect(artifact!.blocks[0].items).toHaveLength(2);
+    });
+
+    it('parses @metaphorize JSON artifact correctly', () => {
+      const content = `\`\`\`json
+{
+  "summary": "Equipment purchase as expiring leveraged option",
+  "blocks": [
+    {
+      "kind": "primitive_mapping",
+      "title": "Option Contract to Equipment Purchase",
+      "items": [
+        {
+          "id": "map_1",
+          "title": "Strike price maps to subsidy cap",
+          "text": "Option strike maps to employer benefit ceiling"
+        }
+      ]
+    }
+  ]
+}
+\`\`\``;
+
+      const { artifact } = parseCanvasResponse(content);
+
+      expect(artifact).not.toBeNull();
+      expect(artifact!.summary).toBe('Equipment purchase as expiring leveraged option');
+    });
+
+    it('validates canvas artifact structure', () => {
+      // Valid artifact
+      expect(isCanvasArtifact({
+        summary: 'Test',
+        blocks: [{ kind: 'test', title: 'Test', items: [] }]
+      })).toBe(true);
+
+      // Missing summary
+      expect(isCanvasArtifact({
+        blocks: [{ kind: 'test', title: 'Test', items: [] }]
+      })).toBe(false);
+
+      // Missing blocks
+      expect(isCanvasArtifact({
+        summary: 'Test'
+      })).toBe(false);
+
+      // Invalid block (missing kind)
+      expect(isCanvasArtifact({
+        summary: 'Test',
+        blocks: [{ title: 'Test', items: [] }]
+      })).toBe(false);
+
+      // Invalid block (missing items)
+      expect(isCanvasArtifact({
+        summary: 'Test',
+        blocks: [{ kind: 'test', title: 'Test' }]
+      })).toBe(false);
+    });
+
+    it('returns null artifact for non-JSON content', () => {
+      const content = `## THESIS
+This is plain markdown content without JSON.
+
+## ANTITHESES
+1. **First point**: Description.`;
+
+      const { artifact, raw } = parseCanvasResponse(content);
+
+      expect(artifact).toBeNull();
+      expect(raw).toBe(content);
+    });
+
+    it('returns null artifact for invalid JSON', () => {
+      const content = `\`\`\`json
+{ invalid json here
+\`\`\``;
+
+      const { artifact, raw } = parseCanvasResponse(content);
+
+      expect(artifact).toBeNull();
+      expect(raw).toBe(content);
     });
   });
 });

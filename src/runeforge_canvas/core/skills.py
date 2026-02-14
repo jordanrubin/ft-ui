@@ -142,14 +142,19 @@ class SkillLoader:
             if skill_dir.name.startswith("."):
                 continue
 
-            # skill file is {SKILL_NAME}.md in uppercase
+            # skill file is {SKILL_NAME}.md or {SKILL_NAME}-CANVAS.md in uppercase
             skill_file = skill_dir / f"{skill_dir.name.upper()}.md"
+            if not skill_file.exists():
+                skill_file = skill_dir / f"{skill_dir.name.upper()}-CANVAS.md"
             if not skill_file.exists():
                 continue
 
             skill = self._parse_skill_file(skill_file)
             if skill:
-                self._skills[skill.name] = skill
+                # normalize canvas variant names: "excavate-canvas" → "excavate"
+                base_name = skill.name.removesuffix("-canvas")
+                skill.name = base_name
+                self._skills[base_name] = skill
 
         self._loaded = True
         return self._skills
@@ -247,7 +252,7 @@ class SkillLoader:
 # default loader paths - look for sibling runeforge repo and local skills
 _project_root = Path(__file__).parent.parent.parent.parent  # ft-ui/
 _local_skills_dir = _project_root / "skills"
-_public_skills_dir = _project_root.parent / "runeforge" / "public"
+_canvas_skills_dir = _project_root.parent / "runeforge" / "canvas"
 _full_skills_dir = _project_root.parent / "runeforge" / "runeforge"
 
 
@@ -257,7 +262,7 @@ def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) ->
     priority:
     1. explicit skills_dir argument
     2. RUNEFORGE_SKILLS_DIR environment variable
-    3. RUNEFORGE_PUBLIC_SKILLS_DIR or RUNEFORGE_FULL_SKILLS_DIR env vars
+    3. RUNEFORGE_CANVAS_SKILLS_DIR or RUNEFORGE_FULL_SKILLS_DIR env vars
     4. default sibling directory structure
     """
     import os
@@ -281,11 +286,11 @@ def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) ->
         if path.exists():
             return path
 
-    # 3. Specific env vars for public/full
+    # 3. Specific env vars for canvas/full
     if full:
         env_path = os.environ.get("RUNEFORGE_FULL_SKILLS_DIR")
     else:
-        env_path = os.environ.get("RUNEFORGE_PUBLIC_SKILLS_DIR")
+        env_path = os.environ.get("RUNEFORGE_CANVAS_SKILLS_DIR")
 
     if env_path:
         path = Path(env_path).expanduser()
@@ -293,13 +298,13 @@ def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) ->
             return path
 
     # 4. Default paths
-    default_path = _full_skills_dir if full else _public_skills_dir
+    default_path = _full_skills_dir if full else _canvas_skills_dir
 
     # Also check some common alternative locations
     alternative_paths = [
-        Path.home() / ".runeforge" / ("runeforge" if full else "public"),
-        Path.home() / "runeforge" / ("runeforge" if full else "public"),
-        Path("/opt/runeforge") / ("runeforge" if full else "public"),
+        Path.home() / ".runeforge" / ("runeforge" if full else "canvas"),
+        Path.home() / "runeforge" / ("runeforge" if full else "canvas"),
+        Path("/opt/runeforge") / ("runeforge" if full else "canvas"),
     ]
 
     if default_path.exists():
@@ -379,11 +384,11 @@ def get_default_loader(skills_dir: Optional[str] = None, full: bool = False) -> 
     args:
         skills_dir: explicit path to skills directory (overrides env vars)
         full: if True, use full runeforge set (38 skills).
-              if False, use public set only (10 skills).
+              if False, use canvas set (10 skills).
 
     environment variables:
         RUNEFORGE_SKILLS_DIR: path to skills directory (highest priority after explicit arg)
-        RUNEFORGE_PUBLIC_SKILLS_DIR: path to public skills directory
+        RUNEFORGE_CANVAS_SKILLS_DIR: path to canvas skills directory
         RUNEFORGE_FULL_SKILLS_DIR: path to full skills directory
 
     always includes local skills directory.

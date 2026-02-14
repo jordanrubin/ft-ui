@@ -18,7 +18,7 @@ def main():
     parser.add_argument(
         "--skills-dir",
         "-s",
-        help="path to skills directory (default: ../runeforge/public)",
+        help="path to skills directory (default: ../runeforge/canvas)",
     )
     parser.add_argument(
         "--mock",

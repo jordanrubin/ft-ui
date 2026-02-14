@@ -53,6 +53,7 @@ class CanvasNode:
     # invocation tracking - what was run and on what
     invocation_target: Optional[str] = None  # the content that was passed as input
     invocation_prompt: Optional[str] = None  # for chat: user's prompt; for skills: skill name
+    used_web_search: bool = False  # whether web search was enabled for this response
 
     @classmethod
     def create_root(cls, content: str) -> CanvasNode:
@@ -73,6 +74,7 @@ class CanvasNode:
         context_snapshot: list[str],
         invocation_target: Optional[str] = None,
         invocation_prompt: Optional[str] = None,
+        used_web_search: bool = False,
     ) -> CanvasNode:
         """create an operation result node."""
         return cls(
@@ -85,6 +87,7 @@ class CanvasNode:
             context_snapshot=context_snapshot,
             invocation_target=invocation_target,
             invocation_prompt=invocation_prompt,
+            used_web_search=used_web_search,
         )
 
     @classmethod
@@ -695,7 +698,17 @@ def _generate_id() -> str:
 
 
 def _compress(content: str, max_len: int = DEFAULT_COMPRESSION_LENGTH) -> str:
-    """compress content to ≤max_len chars, skipping preamble."""
+    """compress content to ≤max_len chars, skipping preamble.
+
+    For JSON canvas artifacts, extracts the summary field value.
+    """
+    # Try to extract summary from JSON canvas artifact
+    summary = _extract_json_summary(content)
+    if summary:
+        if len(summary) <= max_len:
+            return summary
+        return summary[:max_len - 3] + "..."
+
     # common preamble patterns to skip
     skip_patterns = [
         "i'll apply", "i will apply", "okay", "ok,", "sure,", "let me",
@@ -727,6 +740,31 @@ def _compress(content: str, max_len: int = DEFAULT_COMPRESSION_LENGTH) -> str:
     if len(first_line) <= max_len:
         return first_line
     return first_line[:max_len - 3] + "..."
+
+
+def _extract_json_summary(content: str) -> Optional[str]:
+    """Extract summary from JSON canvas artifact if present."""
+    import re
+
+    # Try to extract JSON from markdown code block
+    json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', content)
+    json_str = json_match.group(1) if json_match else None
+
+    # Or try direct JSON if content starts with {
+    if not json_str and content.strip().startswith('{'):
+        json_str = content.strip()
+
+    if not json_str:
+        return None
+
+    try:
+        parsed = json.loads(json_str)
+        if isinstance(parsed, dict) and 'summary' in parsed:
+            return parsed['summary']
+    except json.JSONDecodeError:
+        pass
+
+    return None
 
 
 # --- templates ---

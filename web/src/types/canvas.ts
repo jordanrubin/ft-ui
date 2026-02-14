@@ -13,6 +13,7 @@ export interface CanvasNode {
   source_ids: string[];
   invocation_target: string | null;
   invocation_prompt: string | null;
+  used_web_search?: boolean;
 }
 
 export interface Canvas {

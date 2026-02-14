@@ -10,20 +10,24 @@ import type {
   SubsectionTag,
 } from '../types/subsection';
 
-let idCounter = 0;
-function generateId(): string {
-  return `sub_${++idCounter}_${Date.now().toString(36)}`;
-}
-
 // Generate deterministic ID from content (for answer persistence)
-function hashId(text: string): string {
+function hashCode(text: string): number {
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
     const char = text.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32-bit integer
   }
-  return `q_${Math.abs(hash).toString(36)}`;
+  return Math.abs(hash);
+}
+
+function generateId(text: string): string {
+  return `sub_${hashCode(text).toString(36)}`;
+}
+
+// Generate deterministic ID from content for questions
+function hashId(text: string): string {
+  return `q_${hashCode(text).toString(36)}`;
 }
 
 // Antithesis type detection
@@ -113,7 +117,7 @@ function parseAntithesizeOutput(content: string): ParsedResponse {
     const thesisContent = thesisMatch[1].trim();
     if (thesisContent.length > 10) {
       mainContent = {
-        id: generateId(),
+        id: generateId('THESIS (STEEL-MANNED)'),
         type: 'thesis',
         title: 'THESIS (STEEL-MANNED)',
         content: thesisContent,
@@ -142,7 +146,7 @@ function parseAntithesizeOutput(content: string): ParsedResponse {
     const strength = detectStrength(fullText);
 
     subsections.push({
-      id: generateId(),
+      id: generateId(title),
       type: 'antithesis',
       title,
       content: description,
@@ -167,7 +171,7 @@ function parseAntithesizeOutput(content: string): ParsedResponse {
       const strength = detectStrength(fullText);
 
       subsections.push({
-        id: generateId(),
+        id: generateId(title),
         type: 'antithesis',
         title,
         content: description,
@@ -207,7 +211,7 @@ function parseExcavateOutput(content: string): ParsedResponse {
     const assumptions = extractAssumptions(description);
 
     subsections.push({
-      id: generateId(),
+      id: generateId(title),
       type: 'crux',
       title,
       content: description.split('\n')[0]?.trim() || '', // Just first line as description
@@ -242,7 +246,7 @@ function parseStressifyOutput(content: string): ParsedResponse {
     const strength = detectStrength(title + ' ' + description);
 
     subsections.push({
-      id: generateId(),
+      id: generateId(title),
       type: 'failure_mode',
       title,
       content: description,
@@ -274,7 +278,7 @@ function parseDivergeOutput(content: string): ParsedResponse {
     if (/step|generate|brainstorm/i.test(title)) continue;
 
     subsections.push({
-      id: generateId(),
+      id: generateId(title),
       type: 'alternative',
       title,
       content: description,
@@ -473,10 +477,62 @@ function detectSectionType(header: string, _body: string): SubsectionType | null
 }
 
 /**
+ * Extract badges from description text like "some text [badge1, badge2]"
+ * Returns { text: cleaned description, badges: array of badge strings }
+ */
+function extractBadges(text: string): { text: string; badges: string[] } {
+  const badgePattern = /\[([^\]]+)\]\s*$/;
+  const match = text.match(badgePattern);
+
+  if (!match) {
+    return { text: text.trim(), badges: [] };
+  }
+
+  const badgeStr = match[1];
+  const badges = badgeStr.split(/,\s*/).map(b => b.trim()).filter(b => b.length > 0);
+  const cleanText = text.replace(badgePattern, '').trim();
+
+  return { text: cleanText, badges };
+}
+
+// Badge color mapping based on semantic meaning
+const BADGE_COLORS: Record<string, 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'gray'> = {
+  'high': 'red',
+  'critical': 'red',
+  'risk': 'red',
+  'danger': 'red',
+  'failure': 'red',
+  'crux': 'orange',
+  'key': 'orange',
+  'important': 'orange',
+  'uncertainty': 'yellow',
+  'unknown': 'yellow',
+  'question': 'yellow',
+  'recommended': 'green',
+  'opportunity': 'green',
+  'success': 'green',
+  'suggestion': 'blue',
+  'idea': 'blue',
+  'alternative': 'purple',
+  'option': 'purple',
+};
+
+/**
+ * Convert badge strings to SubsectionTag objects
+ */
+function badgesToTags(badges: string[]): SubsectionTag[] {
+  return badges.map(badge => {
+    const lower = badge.toLowerCase();
+    const color = BADGE_COLORS[lower] || 'gray';
+    return { label: badge, color };
+  });
+}
+
+/**
  * Extract numbered items from section body, stopping at ## boundaries
  */
-function extractNumberedItemsFromBody(body: string): Array<{ num: number; title: string; description: string }> {
-  const items: Array<{ num: number; title: string; description: string }> = [];
+function extractNumberedItemsFromBody(body: string): Array<{ num: number; title: string; description: string; badges: string[] }> {
+  const items: Array<{ num: number; title: string; description: string; badges: string[] }> = [];
 
   // Two-pass approach to handle bold formatting correctly:
   // 1. First try bold titles: "1. **Title with-hyphens**" followed by separator
@@ -501,14 +557,17 @@ function extractNumberedItemsFromBody(body: string): Array<{ num: number; title:
   while ((match = boldPattern.exec(body)) !== null) {
     const num = parseInt(match[1], 10);
     const title = match[2].trim();
-    const description = match[3].trim();
+    const rawDescription = match[3].trim();
+
+    // Extract badges from description
+    const { text: description, badges } = extractBadges(rawDescription);
 
     // Skip process/meta steps
     if (/^step\s*\d/i.test(title)) continue;
     if (title.length < 3) continue;
 
     matchedNums.add(num);
-    items.push({ num, title, description });
+    items.push({ num, title, description, badges });
   }
 
   // Second pass: extract plain titles (only for numbers not already matched)
@@ -519,13 +578,16 @@ function extractNumberedItemsFromBody(body: string): Array<{ num: number; title:
     if (matchedNums.has(num)) continue;
 
     const title = match[2].trim();
-    const description = match[3].trim();
+    const rawDescription = match[3].trim();
+
+    // Extract badges from description
+    const { text: description, badges } = extractBadges(rawDescription);
 
     // Skip process/meta steps
     if (/^step\s*\d/i.test(title)) continue;
     if (title.length < 3) continue;
 
-    items.push({ num, title, description });
+    items.push({ num, title, description, badges });
   }
 
   // Sort by number to maintain order
@@ -557,7 +619,7 @@ function parseGenericOutput(content: string): ParsedResponse {
         // This is a numbered subsection like "### 1. **Progressive Disclosure**"
         // Create a card for it directly
         subsections.push({
-          id: generateId(),
+          id: generateId(numberedHeader.title),
           type: 'proposal',  // Numbered items are typically proposals/suggestions
           title: numberedHeader.title,
           content: section.body.slice(0, 600),
@@ -591,34 +653,34 @@ function parseGenericOutput(content: string): ParsedResponse {
             sectionType === 'proposal' ? 'proposal' :
             sectionType === 'alternative' ? 'alternative' : 'generic';
 
+          // Combine section tag with any badges from the item
+          const tags: SubsectionTag[] = [
+            ...badgesToTags(item.badges),
+          ];
+
           subsections.push({
-            id: generateId(),
+            id: generateId(item.title),
             type: itemType,
             title: item.title,
             content: item.description.slice(0, 600),
             collapsed: false,
-            tags: [{
-              label: section.header.slice(0, 25),
-              color: itemType === 'question' ? 'orange' :
-                     itemType === 'proposal' ? 'blue' :
-                     itemType === 'alternative' ? 'purple' : 'gray',
-            }],
+            tags: tags.length > 0 ? tags : undefined,
           });
         }
       } else if (items.length === 1 && sectionType !== 'section') {
         // Single numbered item in an actionable section (question/proposal)
         const item = items[0];
+        const tags: SubsectionTag[] = [
+          ...badgesToTags(item.badges),
+        ];
+
         subsections.push({
-          id: generateId(),
+          id: generateId(item.title),
           type: sectionType,
           title: item.title,
           content: item.description.slice(0, 400),
           collapsed: false,
-          tags: [{
-            label: section.header.slice(0, 25),
-            color: sectionType === 'question' ? 'orange' :
-                   sectionType === 'proposal' ? 'blue' : 'gray',
-          }],
+          tags: tags.length > 0 ? tags : undefined,
         });
       }
       // Don't create cards for sections without numbered items
@@ -640,12 +702,15 @@ function parseGenericOutput(content: string): ParsedResponse {
     if (item.title.length < 8) continue;
     if (/identify|examine|consider|note|generate/i.test(item.title) && item.title.length < 25) continue;
 
+    const tags = badgesToTags(item.badges);
+
     subsections.push({
-      id: generateId(),
+      id: generateId(item.title),
       type: 'generic',
       title: item.title,
       content: item.description.slice(0, 400),
       collapsed: false,
+      tags: tags.length > 0 ? tags : undefined,
     });
   }
 

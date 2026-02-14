@@ -83,6 +83,7 @@ class ChatRun(BaseModel):
     """request to run freeform chat."""
     prompt: str
     node_id: str
+    enable_web_search: bool = False
 
 
 class CanvasCreate(BaseModel):
@@ -125,6 +126,7 @@ class NodeResponse(BaseModel):
     source_ids: list[str] = []
     invocation_target: Optional[str] = None
     invocation_prompt: Optional[str] = None
+    used_web_search: bool = False
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
@@ -141,6 +143,7 @@ class NodeResponse(BaseModel):
             source_ids=node.source_ids,
             invocation_target=node.invocation_target,
             invocation_prompt=node.invocation_prompt,
+            used_web_search=getattr(node, 'used_web_search', False),
         )
 
 
@@ -458,18 +461,31 @@ async def create_canvas(req: CanvasCreate):
 
     # auto-generate initial response to give user something to work with
     try:
-        initial_prompt = f"""the user wants to build something. here's their initial description:
+        initial_prompt = f"""the user wants to explore something. here's their initial description:
 
 {req.root_content}
 
 ---
 
-provide a brief initial reaction (2-3 paragraphs max):
-1. restate what you understand they want to accomplish
-2. identify 2-3 key considerations or questions that would help clarify the approach
-3. suggest which runeforge skill might be most useful to run first (@excavate for assumptions, @stressify for risks, @diverge for alternatives, etc.)
+you may include brief thinking first if helpful, then provide your response.
 
-be concise and actionable."""
+FORMAT:
+[optional preamble - plain prose only, NO numbered lists or **bold** formatting]
+
+---
+ITEMS:
+1. **Title** - description [badge]
+2. **Title** - description
+...
+
+COMPRESSION RULES (for ITEMS section only):
+- Max 3-4 items
+- Title: 5 words max
+- Description: 20 words max
+- Badge (optional): add [tag] at end for emphasis, e.g. [high], [crux], [uncertainty], [recommended], [risk]
+- Every item must pass: "Would I expand this? Is this a crux?"
+
+IMPORTANT: Only the ITEMS section should use numbered **bold** formatting. The preamble must be plain prose."""
 
         result = await state.client.complete(initial_prompt)
 
@@ -1034,6 +1050,9 @@ async def run_chat(req: ChatRun):
     context_text = state.format_context(context_nodes)
 
     # build prompt
+    web_search_note = """
+you have access to the WebSearch tool. use it to look up current information when the user's question requires up-to-date facts, recent events, or information you're uncertain about.""" if req.enable_web_search else ""
+
     prompt = f"""here is the current discussion context:
 
 {context_text}
@@ -1041,10 +1060,29 @@ async def run_chat(req: ChatRun):
 ---
 
 user question: {req.prompt}
+{web_search_note}
 
-respond thoughtfully to the user's question about this context. be specific and reference the material above."""
+you may include brief thinking/reasoning first if helpful, then provide your response.
 
-    result = await state.client.complete(prompt)
+FORMAT:
+[optional preamble - plain prose only, NO numbered lists or **bold** formatting]
+
+---
+ITEMS:
+1. **Title** - description [badge]
+2. **Title** - description [badge, badge2]
+...
+
+COMPRESSION RULES (for ITEMS section only):
+- Max 5 items (3 is better)
+- Title: 5 words max
+- Description: 20 words max
+- Badge (optional): add [tag] at end for emphasis, e.g. [high], [crux], [uncertainty], [recommended], [risk], [opportunity]
+- Every item must pass: "Would I expand this? Is this a crux?"
+
+IMPORTANT: Only the ITEMS section should use numbered **bold** formatting. The preamble must be plain prose."""
+
+    result = await state.client.complete(prompt, enable_web_search=req.enable_web_search)
 
     # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
@@ -1054,6 +1092,7 @@ respond thoughtfully to the user's question about this context. be specific and 
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
         invocation_prompt=req.prompt,
+        used_web_search=req.enable_web_search,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)

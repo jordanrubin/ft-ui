@@ -82,6 +82,7 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
     id: node.id,
     type: 'canvas',
     position: { x: 0, y: 0 }, // Will be set by dagre
+    draggable: false, // Layout is auto-computed, disable dragging
     data: {
       node,
       isActive: activePath.has(node.id),
@@ -187,6 +188,9 @@ export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onNod
       onNodeDoubleClick={handleNodeDoubleClick}
       nodeTypes={nodeTypes}
       connectionMode={ConnectionMode.Loose}
+      nodesConnectable={false}
+      elementsSelectable={true}
+      zoomOnDoubleClick={false}
       fitView
       fitViewOptions={{ padding: 0.2 }}
       minZoom={0.1}

@@ -272,10 +272,10 @@ export const skillApi = {
       body: JSON.stringify({ chain_text: chainText, node_id: nodeId }),
     }),
 
-  runChat: (prompt: string, nodeId: string) =>
+  runChat: (prompt: string, nodeId: string, enableWebSearch = false) =>
     request<CanvasNode>('/chat/run', {
       method: 'POST',
-      body: JSON.stringify({ prompt, node_id: nodeId }),
+      body: JSON.stringify({ prompt, node_id: nodeId, enable_web_search: enableWebSearch }),
     }),
 };
 

@@ -38,12 +38,16 @@ interface SubsectionViewerProps {
   node: CanvasNode;
   onAnswerSave?: (nodeId: string, answers: Record<string, string>) => void;
   onSubsectionSelect?: (content: string | undefined) => void;
+  onContinueWithAnswers?: (nodeId: string, formattedAnswers: string) => void;
+  availableSkills?: string[];
 }
 
 export default function SubsectionViewer({
   node,
   onAnswerSave,
   onSubsectionSelect,
+  onContinueWithAnswers,
+  availableSkills = [],
 }: SubsectionViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
@@ -113,6 +117,20 @@ export default function SubsectionViewer({
       answer: answers[sub.id] || sub.answer,
     }));
   }, [parsedResponse.subsections, answers]);
+
+  // Check if any answers exist
+  const hasAnyAnswers = Object.keys(answers).length > 0;
+
+  // Format answers for chat continuation
+  const formatAnswersForChat = () => {
+    const lines: string[] = [];
+    for (const sub of subsectionsWithAnswers) {
+      if (sub.answer) {
+        lines.push(`**${sub.title}**: ${sub.answer}`);
+      }
+    }
+    return lines.join('\n\n');
+  };
 
   // Check if we have meaningful structure to display
   const hasContent = parsedResponse.mainContent != null || parsedResponse.subsections.length > 0;
@@ -295,43 +313,101 @@ export default function SubsectionViewer({
         ))}
       </div>
 
-      {/* Suggested moves from artifact */}
-      {artifact?.suggested_moves && artifact.suggested_moves.length > 0 && (
-        <div style={{
-          marginTop: '16px',
-          paddingTop: '16px',
-          borderTop: '1px solid #e5e7eb',
-        }}>
-          <div style={{
-            color: '#6b7280',
-            fontSize: '12px',
-            fontWeight: 600,
-            marginBottom: '10px',
-            letterSpacing: '0.5px',
-          }}>
-            SUGGESTED NEXT
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-            {artifact.suggested_moves.map((move, idx) => (
-              <div
-                key={idx}
-                style={{
-                  background: '#e0e7ff',
-                  color: '#3730a3',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  padding: '6px 12px',
-                  borderRadius: '16px',
-                  cursor: 'default',
-                }}
-                title={move.reason}
-              >
-                {move.skill}
-              </div>
-            ))}
-          </div>
+      {/* Continue with answers button */}
+      {onContinueWithAnswers && parsedResponse.subsections.length > 0 && (
+        <div style={{ marginTop: '16px' }}>
+          <button
+            onClick={() => {
+              if (hasAnyAnswers) {
+                onContinueWithAnswers(node.id, formatAnswersForChat());
+              }
+            }}
+            disabled={!hasAnyAnswers}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              background: hasAnyAnswers ? '#3b82f6' : '#e5e7eb',
+              border: 'none',
+              borderRadius: '8px',
+              color: hasAnyAnswers ? '#fff' : '#9ca3af',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: hasAnyAnswers ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span>Continue with responses</span>
+            {hasAnyAnswers && (
+              <span style={{
+                background: 'rgba(255,255,255,0.2)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+              }}>
+                {Object.keys(answers).length}
+              </span>
+            )}
+          </button>
+          {!hasAnyAnswers && (
+            <div style={{
+              fontSize: '12px',
+              color: '#9ca3af',
+              textAlign: 'center',
+              marginTop: '8px',
+            }}>
+              Add responses to subsections above to continue
+            </div>
+          )}
         </div>
       )}
+
+      {/* Suggested moves from artifact - filtered to available skills */}
+      {artifact?.suggested_moves && artifact.suggested_moves.length > 0 && availableSkills.length > 0 && (() => {
+        const filteredMoves = artifact.suggested_moves.filter(move =>
+          move.skill && availableSkills.some(skill => skill.toLowerCase() === move.skill!.toLowerCase())
+        );
+        if (filteredMoves.length === 0) return null;
+        return (
+          <div style={{
+            marginTop: '16px',
+            paddingTop: '16px',
+            borderTop: '1px solid #e5e7eb',
+          }}>
+            <div style={{
+              color: '#6b7280',
+              fontSize: '12px',
+              fontWeight: 600,
+              marginBottom: '10px',
+              letterSpacing: '0.5px',
+            }}>
+              SUGGESTED NEXT
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {filteredMoves.map((move, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: '#e0e7ff',
+                    color: '#3730a3',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    padding: '6px 12px',
+                    borderRadius: '16px',
+                    cursor: 'default',
+                  }}
+                  title={move.reason}
+                >
+                  {move.skill}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Warnings from artifact */}
       {artifact?.warnings && artifact.warnings.length > 0 && (

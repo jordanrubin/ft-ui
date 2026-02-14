@@ -19,7 +19,7 @@ from claude_agent_sdk import (
 class ClientProtocol(Protocol):
     """protocol for claude clients (real or mock)."""
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
         """send prompt and return response."""
         ...
 
@@ -51,7 +51,7 @@ class MockClient:
     async def __aexit__(self, *args) -> None:
         pass
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
         """return mock response based on prompt."""
         import asyncio
         self.calls.append(prompt)
@@ -91,19 +91,38 @@ class ClaudeClient:
     async def __aexit__(self, *args) -> None:
         pass
 
-    async def complete(self, prompt: str) -> str:
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
         """send a prompt and collect the full response.
 
         creates a fresh client for each query to avoid state conflicts.
+
+        args:
+            prompt: the prompt to send
+            enable_web_search: if True, enable WebSearch tool for this query
         """
         # create fresh client for each query to avoid state conflicts
-        # explicitly disable all tools - runeforge only needs text generation
-        # this bypasses any tool-use hooks the user may have configured
-        options = ClaudeAgentOptions(
-            cwd=str(self.cwd),
-            tools=[],  # no tools - pure text generation
-            allowed_tools=[],  # explicit: no tools allowed
-        )
+        # clear API key so SDK uses Max subscription auth, not API credits
+        import os
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+
+        base_opts = {
+            "cwd": str(self.cwd),
+            "model": "opus",
+        }
+        if enable_web_search:
+            options = ClaudeAgentOptions(
+                **base_opts,
+                tools=["WebSearch"],
+                allowed_tools=["WebSearch"],
+                permission_mode="bypassPermissions",
+            )
+        else:
+            # no tools - pure text generation
+            options = ClaudeAgentOptions(
+                **base_opts,
+                tools=[],
+                allowed_tools=[],
+            )
         client: Optional[ClaudeSDKClient] = None
 
         try:
@@ -164,10 +183,19 @@ class ClaudeClient:
                     pass  # ignore cleanup errors
 
 
-async def run_skill(skill_prompt: str, cwd: Optional[Path] = None) -> str:
+async def run_skill(
+    skill_prompt: str,
+    cwd: Optional[Path] = None,
+    enable_web_search: bool = False,
+) -> str:
     """convenience function to run a skill prompt.
 
     creates a client, sends the prompt, returns the result.
+
+    args:
+        skill_prompt: the prompt to send
+        cwd: working directory for the client
+        enable_web_search: if True, enable WebSearch tool
     """
     async with ClaudeClient(cwd=cwd) as client:
-        return await client.complete(skill_prompt)
+        return await client.complete(skill_prompt, enable_web_search=enable_web_search)

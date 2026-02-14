@@ -12,6 +12,7 @@ interface NodeDrawerProps {
   onSkillRun: (skillName: string) => void;
   onSkillRunOnSelection: (skillName: string, content: string) => void;
   onChatSubmit: (prompt: string) => void;
+  webSearchEnabled: boolean;
   onNodeEdit: (content: string) => void;
   onNodeDelete: () => void;
   onLinkCreate: (targetId: string) => void;
@@ -35,6 +36,7 @@ export default function NodeDrawer({
   onSkillRun: _onSkillRun,
   onSkillRunOnSelection: _onSkillRunOnSelection,
   onChatSubmit,
+  webSearchEnabled,
   onNodeEdit,
   onNodeDelete,
   onLinkCreate: _onLinkCreate,
@@ -54,6 +56,7 @@ export default function NodeDrawer({
   void _onLinkCreate;
   void _linkedNodes;
   void _backlinks;
+  void webSearchEnabled; // Handled at app level
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [chatInput, setChatInput] = useState('');
@@ -277,6 +280,23 @@ export default function NodeDrawer({
           >
             {node.excluded && '✗ '}{node.operation || node.type}
           </span>
+          {node.used_web_search && (
+            <span
+              style={{
+                display: 'inline-block',
+                marginLeft: '6px',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                background: '#1d4ed8',
+                color: '#fff',
+                fontSize: '11px',
+                fontWeight: 500,
+              }}
+              title="Response used web search"
+            >
+              🔍 web
+            </span>
+          )}
           <span style={{ marginLeft: '8px', color: '#666', fontSize: '12px' }}>
             {node.id}
           </span>
@@ -401,6 +421,10 @@ export default function NodeDrawer({
                 node={node}
                 onAnswerSave={onAnswerSave}
                 onSubsectionSelect={onSubsectionSelect}
+                onContinueWithAnswers={(_nodeId, formattedAnswers) => {
+                  onChatSubmit(`Based on my responses:\n\n${formattedAnswers}\n\nPlease continue the analysis.`);
+                }}
+                availableSkills={skills.map(s => s.name)}
               />
             ) : (
               <div

@@ -27,6 +27,9 @@ export default function App() {
     startTime: number;
   }>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
+    return localStorage.getItem('rf-web-search-enabled') === 'true';
+  });
 
   // Helper for managing concurrent operations
   const isRunning = runningOps.size > 0;
@@ -103,6 +106,11 @@ export default function App() {
       setBacklinks([]);
     }
   }, [selectedNode]);
+
+  // Persist web search setting to localStorage
+  useEffect(() => {
+    localStorage.setItem('rf-web-search-enabled', String(webSearchEnabled));
+  }, [webSearchEnabled]);
 
   const refreshCanvas = useCallback(async () => {
     try {
@@ -263,18 +271,62 @@ export default function App() {
     setSelectedNodeIds(new Set());
   }, []);
 
+  // Run skills sequentially (queue mode) - each skill runs on the output of the previous
+  const handleSkillRunQueue = useCallback(
+    async (skillNames: string[], selectedContent?: string) => {
+      if (!selectedNode || skillNames.length === 0) return;
+      const opId = `queue-${Date.now()}`;
+      let currentNodeId = selectedNode.id;
+      const answers = loadNodeAnswers(currentNodeId);
+
+      startOperation(opId, `queue (${skillNames.length})`);
+      setError(null);
+
+      (async () => {
+        try {
+          for (let i = 0; i < skillNames.length; i++) {
+            const skillName = skillNames[i];
+            updateOperationStage(opId, 'waiting');
+
+            // First skill uses selectedContent if provided, rest use full node
+            const newNode = i === 0 && selectedContent
+              ? await skillApi.runOnSelection(skillName, currentNodeId, selectedContent, {}, answers)
+              : await skillApi.run(skillName, currentNodeId, {}, answers);
+
+            updateOperationStage(opId, 'processing');
+            await refreshCanvas();
+
+            // Update current node for next skill in queue
+            if (newNode?.id) {
+              currentNodeId = newNode.id;
+              // Select the new node to show progress
+              if (i === skillNames.length - 1) {
+                setSelectedNode(newNode);
+              }
+            }
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Queue failed');
+        } finally {
+          endOperation(opId);
+        }
+      })();
+    },
+    [selectedNode, refreshCanvas]
+  );
+
   const handleChatSubmit = useCallback(
     async (prompt: string) => {
       if (!selectedNode) return;
       const opId = `chat-${Date.now()}`;
       const nodeId = selectedNode.id;
-      startOperation(opId, 'chat');
+      startOperation(opId, webSearchEnabled ? 'chat (web search)' : 'chat');
       setError(null);
 
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
-          const newNode = await skillApi.runChat(prompt, nodeId);
+          const newNode = await skillApi.runChat(prompt, nodeId, webSearchEnabled);
           updateOperationStage(opId, 'processing');
           await refreshCanvas();
           if (runningOps.size <= 1 && newNode?.id) {
@@ -287,7 +339,7 @@ export default function App() {
         }
       })();
     },
-    [selectedNode, refreshCanvas]
+    [selectedNode, refreshCanvas, webSearchEnabled]
   );
 
   const handleNodeEdit = useCallback(
@@ -404,13 +456,8 @@ export default function App() {
         (async () => {
           try {
             updateOperationStage(opId, 'waiting');
-            const initialPrompt = `provide a brief initial reaction (2-3 paragraphs max):
-1. restate what you understand they want to accomplish
-2. identify 2-3 key considerations or questions that would help clarify the approach
-3. suggest which runeforge skill might be most useful to run first (@excavate for assumptions, @stressify for risks, @diverge for alternatives, etc.)
-
-be concise and actionable.`;
-            const newNode = await skillApi.runChat(initialPrompt, rootId);
+            const initialPrompt = `give me your initial reaction: what do you understand I want, and what are the key considerations?`;
+            const newNode = await skillApi.runChat(initialPrompt, rootId, webSearchEnabled);
             updateOperationStage(opId, 'processing');
             await refreshCanvas();
             if (newNode?.id) {
@@ -611,6 +658,7 @@ be concise and actionable.`;
                 }
               }
             }}
+            onRunSkillQueue={(skillNames, content) => handleSkillRunQueue(skillNames, content)}
             onClearSelection={() => setSelectedSubsectionContent(undefined)}
             onClose={() => {
               setSelectedNode(null);
@@ -752,6 +800,59 @@ be concise and actionable.`;
                   Load
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Settings */}
+          <div style={{ padding: '12px', borderBottom: '1px solid #30363d' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                cursor: 'pointer',
+                fontSize: '13px',
+                color: webSearchEnabled ? '#58a6ff' : '#8b949e',
+              }}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px' }}>🔍</span>
+                Web search
+              </span>
+              <div
+                style={{
+                  width: '36px',
+                  height: '20px',
+                  background: webSearchEnabled ? '#238636' : '#30363d',
+                  borderRadius: '10px',
+                  position: 'relative',
+                  transition: 'background 0.2s',
+                }}
+              >
+                <div
+                  style={{
+                    width: '16px',
+                    height: '16px',
+                    background: '#fff',
+                    borderRadius: '50%',
+                    position: 'absolute',
+                    top: '2px',
+                    left: webSearchEnabled ? '18px' : '2px',
+                    transition: 'left 0.2s',
+                  }}
+                />
+              </div>
+              <input
+                type="checkbox"
+                checked={webSearchEnabled}
+                onChange={(e) => setWebSearchEnabled(e.target.checked)}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {webSearchEnabled && (
+              <p style={{ margin: '6px 0 0', fontSize: '11px', color: '#3fb950' }}>
+                Claude can search the web for current info
+              </p>
             )}
           </div>
 
@@ -1185,6 +1286,7 @@ be concise and actionable.`;
           onSkillRun={handleSkillRun}
           onSkillRunOnSelection={handleSkillRunOnSelection}
           onChatSubmit={handleChatSubmit}
+          webSearchEnabled={webSearchEnabled}
           onNodeEdit={handleNodeEdit}
           onNodeDelete={handleNodeDelete}
           onLinkCreate={handleLinkCreate}
