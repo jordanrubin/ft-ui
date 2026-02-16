@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import type { CanvasNode, SkillInfo } from '../types/canvas';
 import SubsectionViewer from './SubsectionViewer';
 import { isStructuredResponse } from '../utils/responseParser';
@@ -26,6 +27,8 @@ interface NodeDrawerProps {
   allNodes: Record<string, CanvasNode>;
   onSkillRunOnMultiple: (skillName: string) => void;
   onClearMultiSelection: () => void;
+  mobile?: boolean;
+  skillsPane?: ReactNode;
 }
 
 export default function NodeDrawer({
@@ -36,7 +39,7 @@ export default function NodeDrawer({
   onSkillRun: _onSkillRun,
   onSkillRunOnSelection: _onSkillRunOnSelection,
   onChatSubmit,
-  webSearchEnabled,
+  webSearchEnabled: _webSearchEnabled,
   onNodeEdit,
   onNodeDelete,
   onLinkCreate: _onLinkCreate,
@@ -50,17 +53,21 @@ export default function NodeDrawer({
   allNodes,
   onSkillRunOnMultiple,
   onClearMultiSelection,
+  mobile = false,
+  skillsPane,
 }: NodeDrawerProps) {
   // Unused props - kept for API compatibility
   void _onSkillRun;
   void _onLinkCreate;
   void _linkedNodes;
   void _backlinks;
-  void webSearchEnabled; // Handled at app level
+  void _webSearchEnabled;
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [showFullParent, setShowFullParent] = useState(false);
+  const [showMeta, setShowMeta] = useState(false);
+  const [showMobileSkills, setShowMobileSkills] = useState(false);
 
   const hasMultiSelection = selectedNodeIds.size > 0;
   const selectedNodes = Array.from(selectedNodeIds).map((id) => allNodes[id]).filter(Boolean);
@@ -76,18 +83,32 @@ export default function NodeDrawer({
   if (hasMultiSelection) {
     return (
       <div
-        style={{
+        style={mobile ? {
           position: 'fixed',
           top: 0,
           right: 0,
-          width: '400px',
-          height: '100vh',
+          width: '100vw',
+          height: '100dvh',
           background: '#161b22',
           borderLeft: '1px solid #30363d',
           display: 'flex',
           flexDirection: 'column',
           zIndex: 1000,
           boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.3)',
+          overscrollBehavior: 'contain',
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        } : {
+          flex: 6,
+          height: '100%',
+          background: '#161b22',
+          borderLeft: '1px solid #30363d',
+          display: 'flex',
+          flexDirection: 'column',
+          overscrollBehavior: 'contain',
+          minWidth: 0,
         }}
       >
         {/* Header */}
@@ -174,7 +195,7 @@ export default function NodeDrawer({
         </div>
 
         {/* Skills section */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
           <h4 style={{ margin: '0 0 12px', color: '#c9d1d9', fontSize: '14px' }}>
             Run skill on all selected nodes
           </h4>
@@ -242,31 +263,45 @@ export default function NodeDrawer({
 
   return (
     <div
-      style={{
+      style={mobile ? {
         position: 'fixed',
         top: 0,
         right: 0,
-        width: '400px',
-        height: '100vh',
+        width: '100vw',
+        height: '100dvh',
         background: '#161b22',
         borderLeft: '1px solid #30363d',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 1000,
         boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.3)',
+        overscrollBehavior: 'contain',
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+      } : {
+        flex: 6,
+        height: '100%',
+        background: '#161b22',
+        borderLeft: '1px solid #30363d',
+        display: 'flex',
+        flexDirection: 'column',
+        overscrollBehavior: 'contain',
+        minWidth: 0,
       }}
     >
-      {/* Header */}
+      {/* Header - compact */}
       <div
         style={{
-          padding: '16px',
+          padding: '12px 16px',
           borderBottom: '1px solid #30363d',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
         }}
       >
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
             style={{
               display: 'inline-block',
@@ -283,73 +318,205 @@ export default function NodeDrawer({
           {node.used_web_search && (
             <span
               style={{
-                display: 'inline-block',
-                marginLeft: '6px',
-                padding: '4px 8px',
+                padding: '3px 6px',
                 borderRadius: '4px',
                 background: '#1d4ed8',
                 color: '#fff',
-                fontSize: '11px',
-                fontWeight: 500,
+                fontSize: '10px',
               }}
-              title="Response used web search"
+              title="Used web search"
             >
-              🔍 web
+              web
             </span>
           )}
-          <span style={{ marginLeft: '8px', color: '#666', fontSize: '12px' }}>
-            {node.id}
-          </span>
         </div>
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-          {node.type !== 'root' && (
+          {mobile && skillsPane && (
             <button
-              onClick={onToggleExclude}
-              title={node.excluded ? 'Include in plan' : 'Exclude from plan'}
+              onClick={() => setShowMobileSkills(!showMobileSkills)}
+              title="Toggle skills panel"
               style={{
-                background: node.excluded ? '#7f1d1d' : '#21262d',
+                background: showMobileSkills ? '#8b5cf6' : '#21262d',
                 border: '1px solid #30363d',
-                color: node.excluded ? '#fca5a5' : '#8b949e',
-                fontSize: '12px',
+                color: showMobileSkills ? '#fff' : '#8b949e',
+                fontSize: '11px',
+                fontWeight: 600,
                 cursor: 'pointer',
                 padding: '4px 8px',
                 borderRadius: '4px',
               }}
             >
-              {node.excluded ? 'Excluded' : 'Exclude'}
+              Skills
             </button>
           )}
           <button
-            onClick={onClose}
+            onClick={() => setShowMeta(!showMeta)}
+            title="Node info"
             style={{
-              background: 'none',
-              border: 'none',
-              color: '#666',
-              fontSize: '24px',
+              background: showMeta ? '#30363d' : '#21262d',
+              border: '1px solid #30363d',
+              color: '#8b949e',
+              fontSize: '11px',
               cursor: 'pointer',
-              padding: '4px 8px',
+              padding: '3px 6px',
+              borderRadius: '4px',
             }}
           >
-            ×
+            ...
+          </button>
+          <button
+            onClick={onClose}
+            title="Close panel (Esc)"
+            style={{
+              background: '#21262d',
+              border: '1px solid #30363d',
+              color: '#8b949e',
+              fontSize: '13px',
+              cursor: 'pointer',
+              padding: '4px 10px',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>▶</span>
+            <span>Close</span>
           </button>
         </div>
       </div>
 
-      {/* User prompt for chat operations - shown prominently */}
+      {/* Mobile skills pane — collapsible inline */}
+      {mobile && showMobileSkills && skillsPane && (
+        <div style={{
+          borderBottom: '1px solid #30363d',
+          maxHeight: '50vh',
+          overflow: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          {skillsPane}
+        </div>
+      )}
+
+      {/* Collapsible metadata/actions bar */}
+      {showMeta && (
+        <div style={{
+          padding: '8px 16px',
+          borderBottom: '1px solid #30363d',
+          background: '#0d1117',
+          display: 'flex',
+          gap: '6px',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}>
+          <span style={{ fontSize: '11px', color: '#484f58' }}>{node.id}</span>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            style={{
+              padding: '3px 8px',
+              background: '#21262d',
+              border: '1px solid #30363d',
+              borderRadius: '4px',
+              color: '#c9d1d9',
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+          >
+            Edit
+          </button>
+          {node.type !== 'root' && (
+            <>
+              <button
+                onClick={onToggleExclude}
+                style={{
+                  padding: '3px 8px',
+                  background: node.excluded ? '#7f1d1d' : '#21262d',
+                  border: '1px solid #30363d',
+                  borderRadius: '4px',
+                  color: node.excluded ? '#fca5a5' : '#8b949e',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                }}
+              >
+                {node.excluded ? 'Include' : 'Exclude'}
+              </button>
+              <button
+                onClick={onNodeDelete}
+                style={{
+                  padding: '3px 8px',
+                  background: '#21262d',
+                  border: '1px solid #f85149',
+                  borderRadius: '4px',
+                  color: '#f85149',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Chat input - PROMINENT, at top */}
+      <form onSubmit={handleChatSubmit} style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #30363d',
+        background: '#0d1117',
+      }}>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            placeholder="Ask a follow-up question..."
+            disabled={isRunning}
+            style={{
+              flex: 1,
+              padding: '10px 12px',
+              background: '#21262d',
+              border: '1px solid #30363d',
+              borderRadius: '8px',
+              color: '#e0e0e0',
+              fontSize: '14px',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={isRunning || !chatInput.trim()}
+            style={{
+              padding: '10px 16px',
+              background: isRunning ? '#21262d' : '#238636',
+              border: 'none',
+              borderRadius: '8px',
+              color: '#fff',
+              cursor: isRunning ? 'not-allowed' : 'pointer',
+              opacity: isRunning ? 0.6 : 1,
+              fontSize: '14px',
+              fontWeight: 500,
+            }}
+          >
+            {isRunning ? '...' : 'Send'}
+          </button>
+        </div>
+      </form>
+
+      {/* User prompt for chat operations */}
       {node.type === 'operation' && node.operation === 'chat' && node.invocation_prompt && (
         <div
           style={{
-            padding: '12px 16px',
+            padding: '10px 16px',
             background: '#1c1410',
             borderBottom: '1px solid #30363d',
           }}
         >
-          <div style={{ fontSize: '11px', color: '#f0883e', marginBottom: '6px', fontWeight: 600 }}>
+          <div style={{ fontSize: '11px', color: '#f0883e', marginBottom: '4px', fontWeight: 600 }}>
             YOUR QUESTION
           </div>
           <div
             style={{
-              fontSize: '14px',
+              fontSize: '13px',
               color: '#f0883e',
               fontStyle: 'italic',
               lineHeight: 1.5,
@@ -361,7 +528,7 @@ export default function NodeDrawer({
       )}
 
       {/* Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '20px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
         {isEditing ? (
           <div>
             <textarea
@@ -374,8 +541,8 @@ export default function NodeDrawer({
                 background: '#0d1117',
                 border: '1px solid #30363d',
                 borderRadius: '6px',
-                color: '#e0e0e0',
-                fontSize: '14px',
+                color: '#c9d1d9',
+                fontSize: '15px',
                 lineHeight: '1.6',
                 resize: 'vertical',
                 fontFamily: 'inherit',
@@ -429,91 +596,19 @@ export default function NodeDrawer({
             ) : (
               <div
                 style={{
-                  padding: '16px',
+                  padding: '20px',
                   background: '#0d1117',
                   borderRadius: '6px',
-                  color: '#e0e0e0',
-                  fontSize: '14px',
+                  color: '#c9d1d9',
+                  fontSize: '15px',
                   lineHeight: '1.6',
-                  maxHeight: '300px',
-                  overflow: 'auto',
                 }}
               >
                 <Markdown content={node.content_full} />
               </div>
             )}
-            <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => setIsEditing(true)}
-                style={{
-                  padding: '8px 16px',
-                  background: '#21262d',
-                  border: '1px solid #30363d',
-                  borderRadius: '6px',
-                  color: '#c9d1d9',
-                  cursor: 'pointer',
-                }}
-              >
-                Edit
-              </button>
-              {node.type !== 'root' && (
-                <button
-                  onClick={onNodeDelete}
-                  style={{
-                    padding: '8px 16px',
-                    background: '#21262d',
-                    border: '1px solid #f85149',
-                    borderRadius: '6px',
-                    color: '#f85149',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Delete
-                </button>
-              )}
-            </div>
           </div>
         )}
-
-        {/* Chat input */}
-        <form onSubmit={handleChatSubmit} style={{ marginTop: '24px' }}>
-          <label style={{ color: '#666', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
-            Ask about this node
-          </label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="Type a question..."
-              disabled={isRunning}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                background: '#0d1117',
-                border: '1px solid #30363d',
-                borderRadius: '6px',
-                color: '#e0e0e0',
-                fontSize: '14px',
-              }}
-            />
-            <button
-              type="submit"
-              disabled={isRunning || !chatInput.trim()}
-              style={{
-                padding: '10px 16px',
-                background: isRunning ? '#21262d' : '#238636',
-                border: 'none',
-                borderRadius: '6px',
-                color: '#fff',
-                cursor: isRunning ? 'not-allowed' : 'pointer',
-                opacity: isRunning ? 0.6 : 1,
-              }}
-            >
-              {isRunning ? '...' : 'Send'}
-            </button>
-          </div>
-        </form>
 
         {/* Run on section - at bottom */}
         {node.type === 'operation' && (node.invocation_target || parentNode) && (

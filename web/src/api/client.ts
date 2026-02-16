@@ -140,7 +140,32 @@ export const canvasApi = {
       }),
     }),
 
-  // Refresh root from source directory
+  // Create from file
+  createFromFile: (filePath: string, canvasName?: string) =>
+    request<Canvas>('/canvas/from-file', {
+      method: 'POST',
+      body: JSON.stringify({ file_path: filePath, canvas_name: canvasName }),
+    }),
+
+  // Upload a file from the browser
+  uploadFile: async (file: File, canvasName?: string): Promise<Canvas> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (canvasName) formData.append('canvas_name', canvasName);
+
+    const res = await fetch(`${API_BASE}/canvas/from-upload`, {
+      method: 'POST',
+      body: formData,
+      // Do NOT set Content-Type — browser sets multipart boundary automatically
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(error.detail || 'Upload failed');
+    }
+    return res.json();
+  },
+
+  // Refresh root from source directory or file
   refreshRoot: () => request<Canvas>('/canvas/refresh-root', { method: 'POST' }),
 
   // Rename canvas
@@ -149,7 +174,7 @@ export const canvasApi = {
 
   // Delete canvas
   delete: (canvasPath: string) =>
-    request<{ deleted: string }>(`/canvas/${encodeURIComponent(canvasPath)}`, { method: 'DELETE' }),
+    request<{ deleted: string }>(`/canvas?path=${encodeURIComponent(canvasPath)}`, { method: 'DELETE' }),
 
   // Status
   getStatus: () => request<AppStatus>('/status'),

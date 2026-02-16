@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSkillResponse } from '../utils/responseParser';
+import { parseSkillResponse, isStructuredResponse } from '../utils/responseParser';
 import { parseCanvasResponse, isCanvasArtifact } from '../types/canvasArtifact';
 
 describe('parseSkillResponse', () => {
@@ -189,6 +189,37 @@ The claim is that X leads to Y.
     });
   });
 
+  describe('isStructuredResponse rejects raw JSON display', () => {
+    it('recognizes JSON canvas artifact as structured', () => {
+      const content = '```json\n{"summary": "Test summary", "blocks": [{"kind": "test", "title": "T", "items": []}]}\n```';
+      expect(isStructuredResponse(content)).toBe(true);
+    });
+
+    it('recognizes JSON canvas artifact without language tag', () => {
+      const content = '```\n{"summary": "Test", "blocks": []}\n```';
+      expect(isStructuredResponse(content)).toBe(true);
+    });
+
+    it('recognizes bare JSON object as structured', () => {
+      const content = '{"summary": "Test", "blocks": []}';
+      expect(isStructuredResponse(content)).toBe(true);
+    });
+
+    it('never displays raw JSON — all JSON canvas artifacts route to SubsectionViewer', () => {
+      // These are real content patterns from canvas skill responses.
+      // Every one MUST be recognized as structured so NodeDrawer uses
+      // SubsectionViewer instead of raw Markdown rendering.
+      const realPatterns = [
+        '```json\n{"summary": "Dimensionalizing home office", "blocks": [{"kind": "dimensions", "title": "D", "items": [{"id": "1", "title": "T", "text": "X"}]}]}\n```',
+        '```json\n{"summary": "Equipment decision needs stress-testing", "blocks": [{"kind": "antitheses", "title": "A", "items": []}]}\n```',
+        '```json\n{"summary": "Home office purchase rhymes", "blocks": [{"kind": "rhyme_candidates", "title": "R", "items": []}], "suggested_moves": [{"skill": "@dimensionalize"}]}\n```',
+      ];
+      for (const content of realPatterns) {
+        expect(isStructuredResponse(content)).toBe(true);
+      }
+    });
+  });
+
   describe('canvas artifact parsing', () => {
     it('parses @rhyme JSON artifact correctly', () => {
       const content = `\`\`\`json
@@ -341,6 +372,32 @@ This is plain markdown content without JSON.
 
       expect(artifact).toBeNull();
       expect(raw).toBe(content);
+    });
+  });
+
+  describe('isStructuredResponse rhyme fix', () => {
+    it('does NOT trigger on prose containing rhyme/pattern/echo words', () => {
+      // This prose preamble was incorrectly triggering card rendering
+      const prose = `The pattern of your argument echoes a familiar motif in decision theory.
+The structural match between these two cases suggests an analog worth exploring.
+Let me trace the rhyme between your situation and classical risk scenarios.`;
+
+      expect(isStructuredResponse(prose)).toBe(false);
+    });
+
+    it('still triggers on content with actual numbered items', () => {
+      const structured = `Here are the echoes and rhymes found:
+
+1. **Budget allocation as option pricing** - Your spending decision rhymes with financial options theory.
+2. **Time pressure as decay function** - The pattern of urgency maps to theta decay in options.
+3. **Sunk cost as exercise decision** - The analog to already-spent money echoes option exercise logic.`;
+
+      expect(isStructuredResponse(structured)).toBe(true);
+    });
+
+    it('still triggers on JSON canvas artifacts from rhyme skill', () => {
+      const jsonArtifact = '```json\n{"summary": "Structural rhymes found", "blocks": [{"kind": "rhyme_candidates", "title": "Echoes", "items": []}]}\n```';
+      expect(isStructuredResponse(jsonArtifact)).toBe(true);
     });
   });
 });

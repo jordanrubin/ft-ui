@@ -197,6 +197,40 @@ class TestCanvas:
             assert len(loaded.nodes) == 2
             assert loaded.active_path == [root.id, child.id]
 
+    def test_load_migrates_stale_compressed_content(self):
+        """loading a canvas recomputes stale compressed content from JSON artifacts."""
+        import json
+
+        canvas = Canvas(name="test-migration")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        json_content = '```json\n{"summary": "Clean summary text", "blocks": []}\n```'
+        child = CanvasNode.create_operation(
+            operation="@excavate",
+            content=json_content,
+            parent_id=root.id,
+            context_snapshot=[root.id],
+        )
+        canvas.add_node(child)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "test.json"
+            canvas.save(path)
+
+            # Manually corrupt the compressed content to simulate stale data
+            with open(path) as f:
+                data = json.load(f)
+            data["nodes"][child.id]["content_compressed"] = '"summary": "Clean summary text"'
+            with open(path, "w") as f:
+                json.dump(data, f)
+
+            # Load should fix the stale compressed content
+            loaded = Canvas.load(path)
+            node = loaded.nodes[child.id]
+            assert '"summary"' not in node.content_compressed
+            assert "Clean summary text" in node.content_compressed
+
     def test_unique_ids(self):
         """each node gets a unique id."""
         ids = set()

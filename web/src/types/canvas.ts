@@ -27,6 +27,7 @@ export interface Canvas {
   last_saved_at: string | null;
   canvas_path: string | null;
   source_directory: string | null;
+  source_file: string | null;
 }
 
 export interface CanvasListItem {
@@ -56,6 +57,14 @@ export interface Statistics {
   leaf_count: number;
   node_types: Record<string, number>;
   operations_used: Record<string, number>;
+}
+
+export type Mode = 'positive' | 'critical' | 'internal' | 'external' | 'near' | 'far' | 'coarse' | 'fine' | 'descriptive' | 'prescriptive' | 'surface' | 'underlying';
+
+export interface ModeAxis {
+  name: string;
+  modes: [Mode, Mode];
+  labels: [string, string];
 }
 
 export interface AppStatus {

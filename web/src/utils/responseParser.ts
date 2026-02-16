@@ -750,6 +750,11 @@ export function parseSkillResponse(
 
 // Check if content has meaningful structure worth displaying
 export function isStructuredResponse(content: string): boolean {
+  // JSON canvas artifacts — must always route to SubsectionViewer, never render as raw text
+  const trimmed = content.trim();
+  if (trimmed.startsWith('```') && /"summary"/.test(trimmed)) return true;
+  if (trimmed.startsWith('{') && /"summary"/.test(trimmed)) return true;
+
   // Must have actual numbered items with descriptions
   const hasNumberedItems = /\n\d+\.\s*[^\n]{10,}/.test(content);
 
@@ -760,18 +765,10 @@ export function isStructuredResponse(content: string): boolean {
   const headerMatches = content.match(/^##\s+.+$/gm);
   const hasMultipleSections = headerMatches !== null && headerMatches.length >= 2;
 
-  // Or has rhyme/pattern markers
-  const hasRhymeMarkers = /rhyme|pattern|analog|motif|echo|structural\s*match/i.test(content);
-
-  // Or has bullet points with substantial content
-  const bulletMatches = content.match(/^\s*[-*•]\s+.{15,}/gm);
-  const hasSubstantialBullets = bulletMatches !== null && bulletMatches.length >= 3;
-
   // Or has question markers (askuserquestions skill)
   const hasQuestionMarkers = /why this matters|clarifying questions?/i.test(content);
 
   return hasNumberedItems || hasSkillMarkers || hasMultipleSections ||
-         (hasRhymeMarkers && (hasSubstantialBullets || hasMultipleSections)) ||
          hasQuestionMarkers;
 }
 

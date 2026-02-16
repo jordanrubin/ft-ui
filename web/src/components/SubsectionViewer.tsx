@@ -52,6 +52,8 @@ export default function SubsectionViewer({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showOverflow, setShowOverflow] = useState(false);
+  const MAX_VISIBLE_CARDS = 5;
 
   // Load answers from localStorage
   const storageKey = `rf-answers-${node.id}`;
@@ -212,6 +214,8 @@ export default function SubsectionViewer({
       background: '#f8fafc',
       borderRadius: '12px',
       padding: '20px',
+      overscrollBehavior: 'contain',
+      WebkitOverflowScrolling: 'touch',
     }}>
       {/* Artifact summary - shown at top for structured responses */}
       {artifact?.summary && (
@@ -300,9 +304,9 @@ export default function SubsectionViewer({
         </div>
       )}
 
-      {/* Subsection cards */}
+      {/* Subsection cards - capped at MAX_VISIBLE_CARDS, overflow shown as compact list */}
       <div>
-        {subsectionsWithAnswers.map((subsection) => (
+        {subsectionsWithAnswers.slice(0, MAX_VISIBLE_CARDS).map((subsection) => (
           <SubsectionCard
             key={subsection.id}
             subsection={subsection}
@@ -311,6 +315,39 @@ export default function SubsectionViewer({
             onAnswer={handleAnswer}
           />
         ))}
+        {subsectionsWithAnswers.length > MAX_VISIBLE_CARDS && (
+          <div style={{ marginTop: '8px' }}>
+            <button
+              onClick={() => setShowOverflow(!showOverflow)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                background: '#27272a',
+                border: '1px solid #3f3f46',
+                borderRadius: '8px',
+                color: '#a1a1aa',
+                fontSize: '13px',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span>{showOverflow ? 'Hide' : `${subsectionsWithAnswers.length - MAX_VISIBLE_CARDS} more...`}</span>
+              <span style={{ fontSize: '10px' }}>{showOverflow ? '▼' : '▶'}</span>
+            </button>
+            {showOverflow && subsectionsWithAnswers.slice(MAX_VISIBLE_CARDS).map((subsection) => (
+              <SubsectionCard
+                key={subsection.id}
+                subsection={subsection}
+                isSelected={selectedId === subsection.id}
+                onSelect={handleSelect}
+                onAnswer={handleAnswer}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Continue with answers button */}

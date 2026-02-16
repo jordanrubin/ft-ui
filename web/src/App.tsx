@@ -6,7 +6,7 @@ import NodeDrawer from './components/NodeDrawer';
 import SkillsPane from './components/SkillsPane';
 import Login from './components/Login';
 import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
-import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem } from './types/canvas';
+import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem, Mode } from './types/canvas';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -28,7 +28,8 @@ export default function App() {
   }>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
-    return localStorage.getItem('rf-web-search-enabled') === 'true';
+    const stored = localStorage.getItem('rf-web-search-enabled');
+    return stored === null ? true : stored === 'true';
   });
 
   // Helper for managing concurrent operations
@@ -57,12 +58,23 @@ export default function App() {
   const [showCanvasPicker, setShowCanvasPicker] = useState(false);
   const [showDirectoryInput, setShowDirectoryInput] = useState(false);
   const [directoryPath, setDirectoryPath] = useState('');
+  const [showFileInput, setShowFileInput] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showNewCanvasModal, setShowNewCanvasModal] = useState(false);
   const [newCanvasName, setNewCanvasName] = useState('');
   const [newCanvasGoal, setNewCanvasGoal] = useState('');
   const [selectedSubsectionContent, setSelectedSubsectionContent] = useState<string | undefined>();
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Mobile detection
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const isMobile = windowWidth < 768;
 
   // Sidebar shows skills pane when a node is selected
   const showSkillsPane = selectedNode !== null;
@@ -142,10 +154,17 @@ export default function App() {
           // Open drawer if we have selections
           setShowSidebar(true);
         } else {
-          // Normal click: clear multi-selection and focus
+          // Single click: open content panel and focus
           setSelectedNodeIds(new Set());
           await nodeApi.setFocus(nodeId);
           await refreshCanvas();
+          // Open the node in content panel
+          const updated = await canvasApi.get();
+          const node = updated.nodes[nodeId];
+          if (node) {
+            setCanvas(updated);
+            setSelectedNode(node);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to focus node');
@@ -154,16 +173,10 @@ export default function App() {
     [refreshCanvas]
   );
 
-  const handleNodeDoubleClick = useCallback(
-    (nodeId: string) => {
-      const node = canvas?.nodes[nodeId];
-      if (node) {
-        setSelectedNode(node);
-        // Don't force showSidebar - skills pane renders independently
-      }
-    },
-    [canvas]
-  );
+  const handleDeselectNode = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedNodeIds(new Set());
+  }, []);
 
   const handleCloseDrawer = useCallback(() => {
     setSelectedNode(null);
@@ -180,21 +193,22 @@ export default function App() {
   };
 
   const handleSkillRun = useCallback(
-    async (skillName: string) => {
+    async (skillName: string, mode?: Mode) => {
       if (!selectedNode) return;
       const opId = `${skillName}-${Date.now()}`;
       const nodeId = selectedNode.id;
       // Load any user answers for this node (from askuserquestions)
       const answers = loadNodeAnswers(nodeId);
+      const params: Record<string, unknown> = mode ? { mode } : {};
       // Don't close drawer - allow queuing more operations
-      startOperation(opId, skillName);
+      startOperation(opId, mode ? `${skillName} [${mode}]` : skillName);
       setError(null);
 
       // Run async without blocking
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
-          const newNode = await skillApi.run(skillName, nodeId, {}, answers);
+          const newNode = await skillApi.run(skillName, nodeId, params, answers);
           updateOperationStage(opId, 'processing');
           await refreshCanvas();
           // Don't auto-select result when running concurrent ops
@@ -212,18 +226,19 @@ export default function App() {
   );
 
   const handleSkillRunOnSelection = useCallback(
-    async (skillName: string, selectedContent: string) => {
+    async (skillName: string, selectedContent: string, mode?: Mode) => {
       if (!selectedNode) return;
       const opId = `${skillName}-sel-${Date.now()}`;
       const nodeId = selectedNode.id;
       const answers = loadNodeAnswers(nodeId);
-      startOperation(opId, skillName);
+      const params: Record<string, unknown> = mode ? { mode } : {};
+      startOperation(opId, mode ? `${skillName} [${mode}]` : skillName);
       setError(null);
 
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
-          const newNode = await skillApi.runOnSelection(skillName, nodeId, selectedContent, {}, answers);
+          const newNode = await skillApi.runOnSelection(skillName, nodeId, selectedContent, params, answers);
           updateOperationStage(opId, 'processing');
           await refreshCanvas();
           if (runningOps.size <= 1 && newNode?.id) {
@@ -519,10 +534,34 @@ export default function App() {
       // Refresh canvas list
       const list = await canvasApi.list();
       setCanvasList(list);
+
+      // Generate initial chat response in background
+      const rootId = newCanvas.root_id;
+      if (rootId) {
+        const opId = `init_${Date.now()}`;
+        startOperation(opId, 'chat');
+
+        (async () => {
+          try {
+            updateOperationStage(opId, 'waiting');
+            const initialPrompt = `give me your initial reaction: what do you understand this project is, and what are the key considerations?`;
+            const newNode = await skillApi.runChat(initialPrompt, rootId, webSearchEnabled);
+            updateOperationStage(opId, 'processing');
+            await refreshCanvas();
+            if (newNode?.id) {
+              setSelectedNode(newNode);
+            }
+          } catch (err) {
+            console.error('Auto-response generation failed:', err);
+          } finally {
+            endOperation(opId);
+          }
+        })();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Load from directory failed');
     }
-  }, []);
+  }, [refreshCanvas, webSearchEnabled]);
 
   const handleRefreshRoot = useCallback(async () => {
     try {
@@ -532,6 +571,45 @@ export default function App() {
       setError(err instanceof Error ? err.message : 'Refresh failed');
     }
   }, []);
+
+  const handleLoadFromFile = useCallback(async (file: File) => {
+    try {
+      const newCanvas = await canvasApi.uploadFile(file);
+      setCanvas(newCanvas);
+      setSelectedNode(null);
+      setShowFileInput(false);
+      setSelectedFile(null);
+      setShowSidebar(false);
+      const list = await canvasApi.list();
+      setCanvasList(list);
+
+      // Generate initial chat response in background
+      const rootId = newCanvas.root_id;
+      if (rootId) {
+        const opId = `init_${Date.now()}`;
+        startOperation(opId, 'chat');
+
+        (async () => {
+          try {
+            updateOperationStage(opId, 'waiting');
+            const initialPrompt = `give me your initial reaction: what do you understand this document is about, and what are the key points?`;
+            const newNode = await skillApi.runChat(initialPrompt, rootId, webSearchEnabled);
+            updateOperationStage(opId, 'processing');
+            await refreshCanvas();
+            if (newNode?.id) {
+              setSelectedNode(newNode);
+            }
+          } catch (err) {
+            console.error('Auto-response generation failed:', err);
+          } finally {
+            endOperation(opId);
+          }
+        })();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    }
+  }, [refreshCanvas, webSearchEnabled]);
 
   const handleRenameCanvas = useCallback(async () => {
     if (!canvas) return;
@@ -628,9 +706,16 @@ export default function App() {
   }
 
   return (
-    <div style={{ height: '100vh', display: 'flex', background: '#0d1117' }}>
-      {/* Skills Pane Sidebar - always shows when node selected, independent of showSidebar */}
-      {showSkillsPane && selectedNode && (
+    <div style={{
+      height: '100dvh',
+      display: 'flex',
+      background: '#0d1117',
+      overflow: 'hidden',
+      paddingLeft: 'env(safe-area-inset-left)',
+      paddingRight: 'env(safe-area-inset-right)',
+    }}>
+      {/* Skills Pane Sidebar - always shows when node selected, hidden on mobile (drawer covers it) */}
+      {showSkillsPane && selectedNode && !isMobile && (
         <div
           style={{
             width: '180px',
@@ -644,7 +729,7 @@ export default function App() {
             node={selectedNode}
             skills={skills}
             selectedContent={selectedSubsectionContent}
-            onRunSkill={async (skillName, content) => {
+            onRunSkill={async (skillName, content, mode) => {
               if (skillName.startsWith('chat:')) {
                 // Freeform chat
                 const prompt = skillName.slice(5);
@@ -652,9 +737,9 @@ export default function App() {
               } else {
                 // Regular skill
                 if (content) {
-                  await handleSkillRunOnSelection(skillName, content);
+                  await handleSkillRunOnSelection(skillName, content, mode);
                 } else {
-                  await handleSkillRun(skillName);
+                  await handleSkillRun(skillName, mode);
                 }
               }
             }}
@@ -669,8 +754,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Sidebar - only when no node selected and sidebar is open */}
-      {showSidebar && !showSkillsPane && (
+      {/* Main Sidebar - only when no node selected and sidebar is open, hidden on mobile when drawer open */}
+      {showSidebar && !showSkillsPane && !(isMobile && (selectedNode || selectedNodeIds.size > 0)) && (
         <div
           style={{
             width: '260px',
@@ -798,6 +883,62 @@ export default function App() {
                   }}
                 >
                   Load
+                </button>
+              </div>
+            )}
+            <button
+              onClick={() => setShowFileInput(!showFileInput)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                marginTop: '8px',
+                background: '#21262d',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                color: '#c9d1d9',
+                cursor: 'pointer',
+                fontSize: '14px',
+                fontWeight: 500,
+              }}
+            >
+              Load from File
+            </button>
+            {showFileInput && (
+              <div style={{ marginTop: '8px' }}>
+                <input
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    background: '#0d1117',
+                    border: '1px solid #30363d',
+                    borderRadius: '4px',
+                    color: '#c9d1d9',
+                    fontSize: '13px',
+                  }}
+                />
+                {selectedFile && (
+                  <div style={{ marginTop: '4px', fontSize: '12px', color: '#8b949e' }}>
+                    {selectedFile.name}
+                  </div>
+                )}
+                <button
+                  onClick={() => selectedFile && handleLoadFromFile(selectedFile)}
+                  disabled={!selectedFile}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    marginTop: '4px',
+                    background: selectedFile ? '#238636' : '#21262d',
+                    border: 'none',
+                    borderRadius: '4px',
+                    color: '#fff',
+                    cursor: selectedFile ? 'pointer' : 'not-allowed',
+                    fontSize: '13px',
+                  }}
+                >
+                  Upload
                 </button>
               </div>
             )}
@@ -1120,7 +1261,7 @@ export default function App() {
               >
                 {isSaving ? 'Saving...' : 'Save (Ctrl+S)'}
               </button>
-              {canvas.source_directory && (
+              {(canvas.source_directory || canvas.source_file) && (
                 <button
                   onClick={handleRefreshRoot}
                   style={{
@@ -1135,7 +1276,7 @@ export default function App() {
                     fontSize: '12px',
                     fontWeight: 500,
                   }}
-                  title={`Refresh from ${canvas.source_directory}`}
+                  title={`Refresh from ${canvas.source_directory || canvas.source_file}`}
                 >
                   Refresh Root
                 </button>
@@ -1146,7 +1287,7 @@ export default function App() {
       )}
 
       {/* Main canvas area */}
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div style={{ flex: selectedNode || selectedNodeIds.size > 0 ? 4 : 1, position: 'relative', minWidth: 0 }}>
         {/* Toggle sidebar button */}
         <button
           onClick={() => setShowSidebar(!showSidebar)}
@@ -1271,13 +1412,13 @@ export default function App() {
             canvas={canvas}
             selectedNodeIds={selectedNodeIds}
             onNodeClick={handleNodeClick}
-            onNodeDoubleClick={handleNodeDoubleClick}
+            onDeselectNode={handleDeselectNode}
           />
         </ReactFlowProvider>
       </div>
 
-      {/* Node detail drawer */}
-      {(selectedNode || selectedNodeIds.size > 0) && (
+      {/* Content panel — flex sibling, not overlay */}
+      {(selectedNode || selectedNodeIds.size > 0) && !isMobile && (
         <NodeDrawer
           node={selectedNode}
           parentNode={selectedNode?.parent_id && canvas ? canvas.nodes[selectedNode.parent_id] || null : null}
@@ -1299,6 +1440,54 @@ export default function App() {
           allNodes={canvas?.nodes || {}}
           onSkillRunOnMultiple={handleSkillRunOnMultiple}
           onClearMultiSelection={handleClearMultiSelection}
+        />
+      )}
+
+      {/* Mobile: keep overlay behavior */}
+      {(selectedNode || selectedNodeIds.size > 0) && isMobile && (
+        <NodeDrawer
+          node={selectedNode}
+          parentNode={selectedNode?.parent_id && canvas ? canvas.nodes[selectedNode.parent_id] || null : null}
+          skills={skills}
+          onClose={handleCloseDrawer}
+          onSkillRun={handleSkillRun}
+          onSkillRunOnSelection={handleSkillRunOnSelection}
+          onChatSubmit={handleChatSubmit}
+          webSearchEnabled={webSearchEnabled}
+          onNodeEdit={handleNodeEdit}
+          onNodeDelete={handleNodeDelete}
+          onLinkCreate={handleLinkCreate}
+          onToggleExclude={handleToggleExclude}
+          onSubsectionSelect={setSelectedSubsectionContent}
+          linkedNodes={linkedNodes}
+          backlinks={backlinks}
+          isRunning={isRunning}
+          selectedNodeIds={selectedNodeIds}
+          allNodes={canvas?.nodes || {}}
+          onSkillRunOnMultiple={handleSkillRunOnMultiple}
+          onClearMultiSelection={handleClearMultiSelection}
+          mobile
+          skillsPane={selectedNode ? (
+            <SkillsPane
+              node={selectedNode}
+              skills={skills}
+              selectedContent={selectedSubsectionContent}
+              onRunSkill={async (skillName, content, mode) => {
+                if (skillName.startsWith('chat:')) {
+                  const prompt = skillName.slice(5);
+                  await handleChatSubmit(prompt);
+                } else if (content) {
+                  await handleSkillRunOnSelection(skillName, content, mode);
+                } else {
+                  await handleSkillRun(skillName, mode);
+                }
+              }}
+              onRunSkillQueue={(skillNames, content) => handleSkillRunQueue(skillNames, content)}
+              onClearSelection={() => setSelectedSubsectionContent(undefined)}
+              onClose={handleCloseDrawer}
+              isRunning={isRunning}
+            />
+          ) : undefined}
         />
       )}
 

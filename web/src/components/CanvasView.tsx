@@ -24,7 +24,7 @@ interface CanvasViewProps {
   canvas: Canvas | null;
   selectedNodeIds: Set<string>;
   onNodeClick: (nodeId: string, ctrlKey: boolean) => void;
-  onNodeDoubleClick: (nodeId: string) => void;
+  onDeselectNode: () => void;
 }
 
 // Use dagre for automatic layout
@@ -116,7 +116,7 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
   return getLayoutedElements(nodes, edges);
 }
 
-export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onNodeDoubleClick }: CanvasViewProps) {
+export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onDeselectNode }: CanvasViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNodeType2>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
@@ -139,12 +139,9 @@ export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onNod
     [onNodeClick]
   );
 
-  const handleNodeDoubleClick = useCallback(
-    (_: React.MouseEvent, node: CanvasNodeType2) => {
-      onNodeDoubleClick(node.id);
-    },
-    [onNodeDoubleClick]
-  );
+  const handlePaneClick = useCallback(() => {
+    onDeselectNode();
+  }, [onDeselectNode]);
 
   // Custom minimap node color
   const minimapNodeColor = useCallback((node: CanvasNodeType2) => {
@@ -185,7 +182,7 @@ export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onNod
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
       onNodeClick={handleNodeClick}
-      onNodeDoubleClick={handleNodeDoubleClick}
+      onPaneClick={handlePaneClick}
       nodeTypes={nodeTypes}
       connectionMode={ConnectionMode.Loose}
       nodesConnectable={false}

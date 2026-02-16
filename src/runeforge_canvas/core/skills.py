@@ -37,7 +37,7 @@ class Skill:
         skill_params = {}
         if params:
             for k, v in params.items():
-                if k in ("render", "verbosity", "focus"):
+                if k in ("render", "verbosity", "focus", "mode"):
                     render_params[k] = v
                 else:
                     skill_params[k] = v
@@ -254,6 +254,7 @@ _project_root = Path(__file__).parent.parent.parent.parent  # ft-ui/
 _local_skills_dir = _project_root / "skills"
 _canvas_skills_dir = _project_root.parent / "runeforge" / "canvas"
 _full_skills_dir = _project_root.parent / "runeforge" / "runeforge"
+_blend_skills_dir = _project_root.parent / "runeforge" / "ft-blend"
 
 
 def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) -> Path:
@@ -318,11 +319,91 @@ def _resolve_skills_dir(skills_dir: Optional[str] = None, full: bool = False) ->
     return default_path
 
 
+class BlendSkillLoader:
+    """loads mode-inflected skill variants from ft-blend directory.
+
+    file naming: ft-blend/excavate/EXCAVATE-CRITICAL.md → key 'excavate-critical'
+    """
+
+    def __init__(self, blend_dir: Path):
+        self.blend_dir = blend_dir
+        self._skills: dict[str, Skill] = {}
+        self._loaded = False
+
+    def load(self) -> dict[str, Skill]:
+        """scan blend directory and load all mode variants."""
+        if self._loaded:
+            return self._skills
+
+        if not self.blend_dir.exists():
+            return self._skills
+
+        for skill_dir in self.blend_dir.iterdir():
+            if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+                continue
+
+            for md_file in skill_dir.glob("*.md"):
+                skill = self._parse_skill_file(md_file)
+                if skill:
+                    # key as {skill}-{mode}, e.g. "excavate-critical"
+                    self._skills[skill.name] = skill
+
+        self._loaded = True
+        return self._skills
+
+    def get(self, name: str) -> Optional[Skill]:
+        """get a blend skill by compound key (e.g. 'excavate-critical')."""
+        self.load()
+        return self._skills.get(name.lstrip("@"))
+
+    def _parse_skill_file(self, path: Path) -> Optional[Skill]:
+        """parse a blend skill markdown file with yaml frontmatter."""
+        try:
+            content = path.read_text()
+        except Exception:
+            return None
+
+        frontmatter, body = self._split_frontmatter(content)
+        if not frontmatter:
+            return None
+
+        name = frontmatter.get("name")
+        description = frontmatter.get("description", "")
+
+        if not name:
+            return None
+
+        return Skill(
+            name=name,
+            description=description,
+            body=body.strip(),
+            path=path,
+        )
+
+    def _split_frontmatter(self, content: str) -> tuple[dict, str]:
+        """split yaml frontmatter from markdown body."""
+        match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
+        if not match:
+            return {}, content
+
+        yaml_str = match.group(1)
+        body = match.group(2)
+
+        frontmatter = {}
+        for line in yaml_str.split("\n"):
+            if ":" in line:
+                key, value = line.split(":", 1)
+                frontmatter[key.strip()] = value.strip()
+
+        return frontmatter, body
+
+
 class CompositeSkillLoader:
     """loads skills from multiple directories."""
 
-    def __init__(self, loaders: list[SkillLoader]):
+    def __init__(self, loaders: list[SkillLoader], blend_loader: Optional[BlendSkillLoader] = None):
         self.loaders = loaders
+        self.blend_loader = blend_loader
         self._skills: dict[str, Skill] = {}
         self._loaded = False
 
@@ -341,6 +422,22 @@ class CompositeSkillLoader:
         """get a skill by name."""
         self.load()
         name = name.lstrip("@")
+        return self._skills.get(name)
+
+    def get_with_mode(self, name: str, mode: Optional[str] = None) -> Optional[Skill]:
+        """get a skill, optionally resolved to a mode variant.
+
+        tries blend loader for '{name}-{mode}' first, falls back to base skill.
+        """
+        self.load()
+        name = name.lstrip("@")
+
+        if mode and self.blend_loader:
+            blend_key = f"{name}-{mode}"
+            blend_skill = self.blend_loader.get(blend_key)
+            if blend_skill:
+                return blend_skill
+
         return self._skills.get(name)
 
     def resolve_chain(self, chain: SkillChain) -> list[tuple[Skill, dict]]:
@@ -398,4 +495,5 @@ def get_default_loader(skills_dir: Optional[str] = None, full: bool = False) -> 
         SkillLoader(_local_skills_dir),  # local skills first (higher priority)
         SkillLoader(resolved_dir),        # then external runeforge skills
     ]
-    return CompositeSkillLoader(loaders)
+    blend_loader = BlendSkillLoader(_blend_skills_dir)
+    return CompositeSkillLoader(loaders, blend_loader=blend_loader)

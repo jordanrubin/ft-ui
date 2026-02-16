@@ -163,6 +163,7 @@ class Canvas:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     compress_length: int = DEFAULT_COMPRESSION_LENGTH
     source_directory: Optional[str] = None  # directory path if created from directory
+    source_file: Optional[str] = None  # file path if created from single file
 
     # undo/redo - not serialized
     _undo_stack: list[dict] = field(default_factory=list, repr=False)
@@ -662,6 +663,8 @@ class Canvas:
         }
         if self.source_directory:
             d["source_directory"] = self.source_directory
+        if self.source_file:
+            d["source_file"] = self.source_file
         return d
 
     @classmethod
@@ -674,6 +677,7 @@ class Canvas:
             created_at=d.get("created_at", datetime.now().isoformat()),
             compress_length=d.get("compress_length", DEFAULT_COMPRESSION_LENGTH),
             source_directory=d.get("source_directory"),
+            source_file=d.get("source_file"),
         )
         for nid, nd in d.get("nodes", {}).items():
             canvas.nodes[nid] = CanvasNode.from_dict(nd)
@@ -689,7 +693,17 @@ class Canvas:
     def load(cls, path: Path) -> Canvas:
         """load canvas from json file."""
         with open(path) as f:
-            return cls.from_dict(json.load(f))
+            canvas = cls.from_dict(json.load(f))
+        # migrate stale compressed content (pre-JSON-summary-extraction nodes)
+        canvas._recompute_compressed()
+        return canvas
+
+    def _recompute_compressed(self) -> None:
+        """recompute compressed content for nodes with stale JSON summaries."""
+        for node in self.nodes.values():
+            fresh = _compress(node.content_full, self.compress_length)
+            if fresh != node.content_compressed:
+                node.content_compressed = fresh
 
 
 def _generate_id() -> str:

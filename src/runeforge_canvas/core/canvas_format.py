@@ -58,7 +58,7 @@ STRICT RULES:
 3. Extract [BRACKETED TERMS] as tags array, not in title/text
 4. title: max 8 words, plain text, no punctuation except ?
 5. text: 1 sentence max, plain text
-6. Keep total items under 6 unless critical
+6. HARD LIMIT: maximum 5 items total across all blocks. NEVER exceed 5. Prioritize ruthlessly.
 7. suggested_moves: 1-3 relevant next skills
 </output_format>
 '''
@@ -106,11 +106,12 @@ After your analysis, output a JSON code block with the compressed artifact:
 ```
 
 COMPRESSION RULES:
-- Max 5 items (3 is better if you can do it)
+- HARD LIMIT: maximum 5 items total. NEVER exceed 5. 3 is ideal. Merge or drop the weakest.
 - title: 5 words max, plain text
 - text: 20 words max, action-oriented
 - Every item must pass: "Would I expand this? Is this a crux?"
 - Fewer items at higher quality beats more items
+- If you find more than 5, force-rank and keep only the top 5
 
 SUGGESTED_MOVES TYPES:
 - skill: {"type": "skill", "skill": "@name", "mode": "...", "reason": "..."}
@@ -121,9 +122,9 @@ SUGGESTED_MOVES TYPES:
 '''
 
 VERBOSITY_INSTRUCTIONS = {
-    0: "\nMINIMAL OUTPUT: 1 sentence per item. Max 4 items total. Only critical findings.",
-    1: "\nCONCISE OUTPUT: 1 sentence per item. Max 6 items. High/critical findings only.",
-    2: "\nDETAILED OUTPUT: 1-2 sentences per item. All importance levels.",
+    0: "\nMINIMAL OUTPUT: 1 sentence per item. Max 3 items total. Only critical findings.",
+    1: "\nCONCISE OUTPUT: 1 sentence per item. Max 5 items. High/critical findings only.",
+    2: "\nDETAILED OUTPUT: 1-2 sentences per item. Max 5 items. All importance levels.",
 }
 
 FOCUS_INSTRUCTIONS = {

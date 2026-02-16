@@ -8,13 +8,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -159,6 +160,7 @@ class CanvasResponse(BaseModel):
     last_saved_at: Optional[str] = None
     canvas_path: Optional[str] = None
     source_directory: Optional[str] = None
+    source_file: Optional[str] = None
 
     @classmethod
     def from_canvas(cls, canvas: Canvas, is_dirty: bool = False, last_saved_at: Optional[str] = None, canvas_path: Optional[Path] = None) -> "CanvasResponse":
@@ -173,6 +175,7 @@ class CanvasResponse(BaseModel):
             last_saved_at=last_saved_at,
             canvas_path=str(canvas_path) if canvas_path else None,
             source_directory=canvas.source_directory,
+            source_file=canvas.source_file,
         )
 
 
@@ -665,6 +668,147 @@ async def create_canvas_from_directory(req: CanvasFromDirectory):
     return _canvas_response()
 
 
+# --- file extensions considered text-readable ---
+_TEXT_EXTENSIONS = {
+    ".md", ".txt", ".csv", ".json", ".toml", ".yaml", ".yml",
+    ".py", ".js", ".ts", ".tsx", ".jsx", ".rs", ".go", ".java",
+    ".c", ".cpp", ".h", ".hpp", ".rb", ".sh", ".bash", ".zsh",
+    ".html", ".css", ".scss", ".xml", ".sql", ".lua", ".r",
+    ".swift", ".kt", ".scala", ".pl", ".pm", ".el", ".clj",
+    ".hs", ".erl", ".ex", ".exs", ".vim", ".conf", ".cfg",
+    ".ini", ".env", ".dockerfile", ".makefile", ".cmake",
+    ".tf", ".hcl", ".nix", ".dhall",
+}
+
+_MAX_FILE_CHARS = 50_000
+
+
+def _read_file_content(path: Path) -> str:
+    """Read file content for canvas ingestion.
+
+    Supports text files, code files, and PDFs.
+    Raises ValueError for unsupported binary files.
+    """
+    suffix = path.suffix.lower()
+
+    # PDF extraction
+    if suffix == ".pdf":
+        try:
+            import pdfplumber
+        except ImportError:
+            raise ValueError("pdfplumber is required for PDF files: pip install pdfplumber")
+        pages = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                text = page.extract_text()
+                if text:
+                    pages.append(text)
+        return "\n---\n".join(pages)[:_MAX_FILE_CHARS]
+
+    # Text-readable files
+    if suffix in _TEXT_EXTENSIONS:
+        return path.read_text(errors="replace")[:_MAX_FILE_CHARS]
+
+    # Try reading as text for unknown extensions — reject if binary
+    try:
+        content = path.read_text(errors="strict")
+        return content[:_MAX_FILE_CHARS]
+    except (UnicodeDecodeError, ValueError):
+        raise ValueError(f"Unsupported file type: {suffix}")
+
+
+class CanvasFromFile(BaseModel):
+    """request to create canvas from a single file."""
+    file_path: str
+    canvas_name: Optional[str] = None
+
+
+@app.post("/canvas/from-file", response_model=CanvasResponse)
+async def create_canvas_from_file(req: CanvasFromFile):
+    """create a new canvas from a single file."""
+    file_path = Path(req.file_path).expanduser().resolve()
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"file not found: {req.file_path}")
+    if not file_path.is_file():
+        raise HTTPException(status_code=400, detail=f"not a file: {req.file_path}")
+
+    try:
+        content = _read_file_content(file_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    name = req.canvas_name or file_path.stem
+
+    # Format content with filename header
+    lines = [f"# {file_path.name}", ""]
+    if file_path.suffix.lower() in (".md", ".txt", ".csv"):
+        lines.append(content)
+    else:
+        lines.append(f"```{file_path.suffix.lstrip('.')}")
+        lines.append(content)
+        lines.append("```")
+
+    formatted_content = "\n".join(lines)
+
+    # Auto-save current canvas before creating new one
+    state.auto_save()
+
+    state.canvas = Canvas(name=name)
+    state.canvas.source_file = str(file_path)
+    root = CanvasNode.create_root(formatted_content)
+    state.canvas.add_node(root)
+    state.canvas_path = _get_unique_canvas_path(name)
+    state.mark_dirty()
+    state.save_session()
+    return _canvas_response()
+
+
+@app.post("/canvas/from-upload", response_model=CanvasResponse)
+async def create_canvas_from_upload(
+    file: UploadFile = File(...),
+    canvas_name: Optional[str] = Form(None),
+):
+    """create a new canvas from an uploaded file."""
+    original_filename = file.filename or "upload"
+    suffix = Path(original_filename).suffix
+
+    # Save upload to temp file (preserving extension for _read_file_content)
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(await file.read())
+        tmp_path = Path(tmp.name)
+
+    try:
+        content = _read_file_content(tmp_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    name = canvas_name or Path(original_filename).stem
+
+    # Format content with filename header (same logic as from-file)
+    lines = [f"# {original_filename}", ""]
+    if suffix.lower() in (".md", ".txt", ".csv"):
+        lines.append(content)
+    else:
+        lines.append(f"```{suffix.lstrip('.')}")
+        lines.append(content)
+        lines.append("```")
+
+    formatted_content = "\n".join(lines)
+
+    state.auto_save()
+
+    state.canvas = Canvas(name=name)
+    state.canvas.source_file = original_filename
+    root = CanvasNode.create_root(formatted_content)
+    state.canvas.add_node(root)
+    state.canvas_path = _get_unique_canvas_path(name)
+    state.mark_dirty()
+    state.save_session()
+    return _canvas_response()
+
+
 @app.get("/canvas", response_model=CanvasResponse)
 async def get_canvas():
     """get current canvas state."""
@@ -673,35 +817,55 @@ async def get_canvas():
 
 @app.post("/canvas/refresh-root", response_model=CanvasResponse)
 async def refresh_root_from_directory():
-    """refresh root node content from source directory."""
-    if not state.canvas.source_directory:
-        raise HTTPException(
-            status_code=400,
-            detail="canvas has no source directory - was not created from directory"
-        )
+    """refresh root node content from source directory or file."""
+    if state.canvas.source_file:
+        # Re-read from source file
+        file_path = Path(state.canvas.source_file)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail=f"source file not found: {file_path}")
 
-    dir_path = Path(state.canvas.source_directory)
-    if not dir_path.exists():
-        raise HTTPException(status_code=404, detail=f"source directory not found: {dir_path}")
+        try:
+            content = _read_file_content(file_path)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    # regenerate content using same logic as from-directory
-    lines = [f"# {state.canvas.name}", "", "## Structure", "```"]
-    lines.append(dir_path.name + "/")
-    lines.extend(_generate_tree(dir_path, "", 0, 3))  # default max_depth
-    lines.append("```")
-
-    key_files = _get_key_files(dir_path)
-    if key_files:
-        lines.append("")
-        lines.append("## Key Files")
-        for fname, content in key_files:
-            lines.append("")
-            lines.append(f"### {fname}")
-            lines.append("```")
+        lines = [f"# {file_path.name}", ""]
+        if file_path.suffix.lower() in (".md", ".txt", ".csv"):
+            lines.append(content)
+        else:
+            lines.append(f"```{file_path.suffix.lstrip('.')}")
             lines.append(content)
             lines.append("```")
 
-    new_content = "\n".join(lines)
+        new_content = "\n".join(lines)
+    elif state.canvas.source_directory:
+        dir_path = Path(state.canvas.source_directory)
+        if not dir_path.exists():
+            raise HTTPException(status_code=404, detail=f"source directory not found: {dir_path}")
+
+        # regenerate content using same logic as from-directory
+        lines = [f"# {state.canvas.name}", "", "## Structure", "```"]
+        lines.append(dir_path.name + "/")
+        lines.extend(_generate_tree(dir_path, "", 0, 3))  # default max_depth
+        lines.append("```")
+
+        key_files = _get_key_files(dir_path)
+        if key_files:
+            lines.append("")
+            lines.append("## Key Files")
+            for fname, content in key_files:
+                lines.append("")
+                lines.append(f"### {fname}")
+                lines.append("```")
+                lines.append(content)
+                lines.append("```")
+
+        new_content = "\n".join(lines)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="canvas has no source directory or file"
+        )
 
     # update root node
     if state.canvas.root_id and state.canvas.root_id in state.canvas.nodes:
@@ -783,12 +947,12 @@ async def rename_canvas(new_name: str):
     return _canvas_response()
 
 
-@app.delete("/canvas/{canvas_path:path}")
-async def delete_canvas(canvas_path: str):
+@app.delete("/canvas")
+async def delete_canvas(path: str):
     """delete a saved canvas file."""
-    p = Path(canvas_path).expanduser()
+    p = Path(path).expanduser()
     if not p.exists():
-        raise HTTPException(status_code=404, detail=f"canvas not found: {canvas_path}")
+        raise HTTPException(status_code=404, detail=f"canvas not found: {path}")
 
     # If deleting current canvas, clear state
     if state.canvas_path and state.canvas_path == p:
@@ -857,7 +1021,8 @@ async def run_skill(req: SkillRun):
     if not state.canvas:
         raise HTTPException(status_code=404, detail="no canvas loaded")
 
-    skill = state.skill_loader.get(req.skill_name)
+    mode = req.params.pop("mode", None) if "mode" in req.params else None
+    skill = state.skill_loader.get_with_mode(req.skill_name, mode)
     if not skill:
         raise HTTPException(status_code=404, detail=f"skill not found: {req.skill_name}")
 
@@ -902,7 +1067,8 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
     if not state.canvas:
         raise HTTPException(status_code=404, detail="no canvas loaded")
 
-    skill = state.skill_loader.get(req.skill_name)
+    mode = req.params.pop("mode", None) if "mode" in req.params else None
+    skill = state.skill_loader.get_with_mode(req.skill_name, mode)
     if not skill:
         raise HTTPException(status_code=404, detail=f"skill not found: {req.skill_name}")
 
@@ -944,7 +1110,8 @@ async def run_skill_on_multiple(req: SkillRunOnMultiple):
     if not state.canvas:
         raise HTTPException(status_code=404, detail="no canvas loaded")
 
-    skill = state.skill_loader.get(req.skill_name)
+    mode = req.params.pop("mode", None) if "mode" in req.params else None
+    skill = state.skill_loader.get_with_mode(req.skill_name, mode)
     if not skill:
         raise HTTPException(status_code=404, detail=f"skill not found: {req.skill_name}")
 
