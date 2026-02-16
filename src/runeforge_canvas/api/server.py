@@ -1076,16 +1076,29 @@ async def run_skill_on_selection(req: SkillRunOnSelection):
     if not focus:
         raise HTTPException(status_code=404, detail=f"node not found: {req.node_id}")
 
-    # Build prompt focused on selected content only
-    focus_directive = f"""<directive>
-FOCUS: Apply this skill ONLY to the selected content below. Do not analyze the parent context - it is provided only for background understanding. Your response should be about the selection, not the broader document.
+    # gather tree context (root → ... → focus node)
+    context_nodes = state.canvas.get_context_for_operation(focus.id)
+    context_text = state.format_context(context_nodes)
+
+    # include user answers if provided
+    if req.answers:
+        answer_text = "\n\n--- USER ANSWERS ---\n"
+        for q_id, answer in req.answers.items():
+            answer_text += f"- {q_id}: {answer}\n"
+        context_text += answer_text
+
+    # combine tree context with selection directive
+    combined_context = f"""{context_text}
+
+<directive>
+FOCUS: Apply this skill ONLY to the selected content below. The tree context above is provided for background understanding. Your response should be about the selection, not the broader document.
 </directive>
 
 <selection>
 {req.selected_content}
 </selection>"""
 
-    prompt = skill.build_prompt(focus_directive, req.params)
+    prompt = skill.build_prompt(combined_context, req.params)
     result = await state.client.complete(prompt)
 
     # create result node with invocation tracking
@@ -1093,7 +1106,7 @@ FOCUS: Apply this skill ONLY to the selected content below. Do not analyze the p
         operation=skill.display_name,
         content=result,
         parent_id=focus.id,
-        context_snapshot=[focus.id],
+        context_snapshot=[n.id for n in context_nodes],
         invocation_target=req.selected_content[:500] + ("..." if len(req.selected_content) > 500 else ""),
         invocation_prompt=skill.display_name,
     )
