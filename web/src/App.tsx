@@ -4,6 +4,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import CanvasView from './components/CanvasView';
 import NodeDrawer from './components/NodeDrawer';
 import SkillsPane from './components/SkillsPane';
+import TutorialHint from './components/TutorialHint';
 import Login from './components/Login';
 import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
 import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem, Mode } from './types/canvas';
@@ -66,6 +67,17 @@ export default function App() {
   const [selectedSubsectionContent, setSelectedSubsectionContent] = useState<string | undefined>();
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+
+  // Tutorial state
+  type TutorialStep = 'click-node' | 'pick-skill' | 'see-result' | null;
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep>(null);
+  const [tutorialNodeId, setTutorialNodeId] = useState<string | undefined>();
+
+  const completeTutorial = useCallback(() => {
+    setTutorialStep(null);
+    setTutorialNodeId(undefined);
+    localStorage.setItem('ft-tutorial-seen', 'true');
+  }, []);
 
   // Mobile detection
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -169,12 +181,17 @@ export default function App() {
             setCanvas(updated);
             setSelectedNode(node);
           }
+          // Advance tutorial: click-node → pick-skill
+          if (tutorialStep === 'click-node') {
+            setTutorialStep('pick-skill');
+            setTutorialNodeId(undefined);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to focus node');
       }
     },
-    [refreshCanvas]
+    [refreshCanvas, tutorialStep]
   );
 
   const handleDeselectNode = useCallback(() => {
@@ -210,6 +227,9 @@ export default function App() {
       startOperation(opId, mode ? `${skillName} [${mode}]` : skillName);
       setError(null);
 
+      // Advance tutorial: pick-skill → see-result
+      const wasTutorialSkill = tutorialStep === 'pick-skill';
+
       // Run async without blocking
       (async () => {
         try {
@@ -221,6 +241,14 @@ export default function App() {
           if (runningOps.size <= 1 && newNode?.id) {
             setSelectedNode(newNode);
           }
+          // Show tutorial result step
+          if (wasTutorialSkill && newNode?.id) {
+            setTutorialStep('see-result');
+            setTutorialNodeId(newNode.id);
+            setTimeout(() => {
+              completeTutorial();
+            }, 4000);
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : `${skillName} failed`);
         } finally {
@@ -228,7 +256,7 @@ export default function App() {
         }
       })();
     },
-    [selectedNode, refreshCanvas, runningOps.size]
+    [selectedNode, refreshCanvas, runningOps.size, tutorialStep, completeTutorial]
   );
 
   const handleSkillRunOnSelection = useCallback(
@@ -241,6 +269,9 @@ export default function App() {
       startOperation(opId, mode ? `${skillName} [${mode}]` : skillName);
       setError(null);
 
+      // Advance tutorial: pick-skill → see-result
+      const wasTutorialSkill = tutorialStep === 'pick-skill';
+
       (async () => {
         try {
           updateOperationStage(opId, 'waiting');
@@ -250,6 +281,13 @@ export default function App() {
           if (runningOps.size <= 1 && newNode?.id) {
             setSelectedNode(newNode);
           }
+          if (wasTutorialSkill && newNode?.id) {
+            setTutorialStep('see-result');
+            setTutorialNodeId(newNode.id);
+            setTimeout(() => {
+              completeTutorial();
+            }, 4000);
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : `${skillName} on selection failed`);
         } finally {
@@ -257,7 +295,7 @@ export default function App() {
         }
       })();
     },
-    [selectedNode, refreshCanvas, runningOps.size]
+    [selectedNode, refreshCanvas, runningOps.size, tutorialStep, completeTutorial]
   );
 
   const handleSkillRunOnMultiple = useCallback(
@@ -466,6 +504,12 @@ export default function App() {
       setNewCanvasGoal('');
       setShowSidebar(false);
       setCanvasList(await canvasApi.list());
+
+      // Start tutorial for first-time users
+      if (!localStorage.getItem('ft-tutorial-seen') && newCanvas.root_id) {
+        setTutorialStep('click-node');
+        setTutorialNodeId(newCanvas.root_id);
+      }
 
       // Generate initial chat response in background
       const rootId = newCanvas.root_id;
@@ -729,6 +773,10 @@ export default function App() {
             borderRight: '1px solid #30363d',
             display: 'flex',
             flexDirection: 'column',
+            ...(tutorialStep === 'pick-skill' ? {
+              animation: 'tutorial-glow 1.5s ease infinite',
+              borderRight: '2px solid #58a6ff',
+            } : {}),
           }}
         >
           <SkillsPane
@@ -1426,10 +1474,34 @@ export default function App() {
           </div>
         )}
 
+        {/* Tutorial hints */}
+        {tutorialStep === 'click-node' && (
+          <TutorialHint
+            message="Click this node to start exploring"
+            position="center"
+            onSkip={completeTutorial}
+          />
+        )}
+        {tutorialStep === 'pick-skill' && (
+          <TutorialHint
+            message="Pick a skill to analyze"
+            position="left"
+            onSkip={completeTutorial}
+          />
+        )}
+        {tutorialStep === 'see-result' && (
+          <TutorialHint
+            message="New perspective created — keep going!"
+            position="center"
+            onSkip={completeTutorial}
+          />
+        )}
+
         <ReactFlowProvider>
           <CanvasView
             canvas={canvas}
             selectedNodeIds={selectedNodeIds}
+            tutorialNodeId={tutorialNodeId}
             onNodeClick={handleNodeClick}
             onDeselectNode={handleDeselectNode}
           />

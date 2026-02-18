@@ -8,6 +8,7 @@ export interface CanvasNodeData extends Record<string, unknown> {
   isActive: boolean;
   isFocused: boolean;
   isSelected: boolean;
+  isTutorialTarget: boolean;
 }
 
 export type CanvasNodeType2 = Node<CanvasNodeData, 'canvas'>;
@@ -62,13 +63,13 @@ function parseOperation(op: string): { base: string; mode: string | null } {
 }
 
 function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
-  const { node, isActive, isFocused, isSelected } = data as CanvasNodeData;
+  const { node, isActive, isFocused, isSelected, isTutorialTarget } = data as CanvasNodeData;
   const colors = typeColors[node.type] || typeColors.user;
   const parsed = node.operation ? parseOperation(node.operation) : null;
   const operationColor = parsed ? operationColors[parsed.base] || '#666' : null;
 
-  // Determine border color: multi-selected > focused > active > default
-  const borderColor = isSelected ? '#22c55e' : isFocused ? '#ffd700' : isActive ? '#4dabf7' : colors.border;
+  // Determine border color: tutorial > multi-selected > focused > active > default
+  const borderColor = isTutorialTarget ? '#58a6ff' : isSelected ? '#22c55e' : isFocused ? '#ffd700' : isActive ? '#4dabf7' : colors.border;
 
   // Determine box shadow: multi-selected gets green glow
   const boxShadow = isSelected
@@ -92,6 +93,7 @@ function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
         boxShadow,
         cursor: 'pointer',
         transition: 'all 0.2s ease',
+        ...(isTutorialTarget ? { animation: 'tutorial-pulse 1.5s ease infinite' } : {}),
       }}
     >
       {/* Top handle for incoming edges - not shown on root */}

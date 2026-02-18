@@ -23,6 +23,7 @@ const nodeTypes = {
 interface CanvasViewProps {
   canvas: Canvas | null;
   selectedNodeIds: Set<string>;
+  tutorialNodeId?: string;
   onNodeClick: (nodeId: string, ctrlKey: boolean) => void;
   onDeselectNode: () => void;
 }
@@ -74,7 +75,7 @@ function getLayoutedElements(
   return { nodes: layoutedNodes, edges };
 }
 
-function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: CanvasNodeType2[]; edges: Edge[] } {
+function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>, tutorialNodeId?: string): { nodes: CanvasNodeType2[]; edges: Edge[] } {
   const activePath = new Set(canvas.active_path);
   const focusId = canvas.active_path[canvas.active_path.length - 1];
 
@@ -88,6 +89,7 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
       isActive: activePath.has(node.id),
       isFocused: node.id === focusId,
       isSelected: selectedNodeIds.has(node.id),
+      isTutorialTarget: node.id === tutorialNodeId,
     },
   }));
 
@@ -116,21 +118,21 @@ function canvasToFlow(canvas: Canvas, selectedNodeIds: Set<string>): { nodes: Ca
   return getLayoutedElements(nodes, edges);
 }
 
-export default function CanvasView({ canvas, selectedNodeIds, onNodeClick, onDeselectNode }: CanvasViewProps) {
+export default function CanvasView({ canvas, selectedNodeIds, tutorialNodeId, onNodeClick, onDeselectNode }: CanvasViewProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNodeType2>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Update nodes/edges when canvas or selection changes
   useEffect(() => {
     if (canvas && Object.keys(canvas.nodes).length > 0) {
-      const { nodes: layoutedNodes, edges: layoutedEdges } = canvasToFlow(canvas, selectedNodeIds);
+      const { nodes: layoutedNodes, edges: layoutedEdges } = canvasToFlow(canvas, selectedNodeIds, tutorialNodeId);
       setNodes(layoutedNodes);
       setEdges(layoutedEdges);
     } else {
       setNodes([]);
       setEdges([]);
     }
-  }, [canvas, selectedNodeIds, setNodes, setEdges]);
+  }, [canvas, selectedNodeIds, tutorialNodeId, setNodes, setEdges]);
 
   const handleNodeClick = useCallback(
     (event: React.MouseEvent, node: CanvasNodeType2) => {
