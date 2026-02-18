@@ -83,3 +83,22 @@ export interface AppStatus {
   autosave_interval: number;
   node_count: number;
 }
+
+export interface PipelineStep {
+  skill: string;
+  target: string;
+  mode?: string;
+  reason: string;
+}
+
+export interface PipelineSpec {
+  rationale: string;
+  steps: PipelineStep[];
+}
+
+export interface PipelineComposeResponse {
+  pipeline: PipelineSpec;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}

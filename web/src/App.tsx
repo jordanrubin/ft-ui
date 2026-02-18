@@ -6,7 +6,7 @@ import NodeDrawer from './components/NodeDrawer';
 import SkillsPane from './components/SkillsPane';
 import TutorialHint from './components/TutorialHint';
 import Login from './components/Login';
-import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, type PlanFileInfo } from './api/client';
+import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, pipelineApi, type PlanFileInfo } from './api/client';
 import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem, Mode } from './types/canvas';
 
 export default function App() {
@@ -489,6 +489,68 @@ export default function App() {
     })();
   }, [refreshCanvas, canvas]);
 
+  const handleComposePipeline = useCallback(async () => {
+    const opId = `compose-${Date.now()}`;
+    startOperation(opId, 'composing pipeline...');
+    setError(null);
+
+    (async () => {
+      try {
+        // Step 1: Compose pipeline
+        updateOperationStage(opId, 'waiting');
+        const { pipeline } = await pipelineApi.compose(selectedNode?.id ?? undefined);
+
+        // Step 2: Execute steps sequentially
+        const resultNodes: Record<string, string> = {}; // "$1" -> actual node ID
+        endOperation(opId);
+
+        for (let i = 0; i < pipeline.steps.length; i++) {
+          const step = pipeline.steps[i];
+          // Resolve target
+          let targetId = step.target;
+          if (targetId.startsWith('$')) {
+            const resolved = resultNodes[targetId];
+            if (!resolved) {
+              setError(`Pipeline step ${i + 1}: unresolved reference ${targetId}`);
+              return;
+            }
+            targetId = resolved;
+          }
+
+          const stepOpId = `compose-step-${i}-${Date.now()}`;
+          const label = `${step.skill}${step.mode ? ` [${step.mode}]` : ''}: ${step.reason}`;
+          startOperation(stepOpId, label);
+          updateOperationStage(stepOpId, 'waiting');
+
+          try {
+            const params: Record<string, unknown> = step.mode ? { mode: step.mode } : {};
+            const newNode = await skillApi.run(step.skill, targetId, params);
+            updateOperationStage(stepOpId, 'processing');
+            await refreshCanvas();
+            resultNodes[`$${i + 1}`] = newNode.id;
+          } finally {
+            endOperation(stepOpId);
+          }
+        }
+
+        // Select final node
+        const lastKey = `$${pipeline.steps.length}`;
+        if (resultNodes[lastKey]) {
+          const updated = await canvasApi.get();
+          setCanvas(updated);
+          const finalNode = updated.nodes[resultNodes[lastKey]];
+          if (finalNode) {
+            setSelectedNode(finalNode);
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Pipeline composition failed');
+      } finally {
+        endOperation(opId);
+      }
+    })();
+  }, [selectedNode, refreshCanvas]);
+
   const handleCreateCanvas = useCallback(async () => {
     if (!newCanvasName.trim() || !newCanvasGoal.trim()) return;
     const goal = newCanvasGoal.trim();
@@ -800,6 +862,7 @@ export default function App() {
               }
             }}
             onRunSkillQueue={(skillNames, content) => handleSkillRunQueue(skillNames, content)}
+            onComposePipeline={handleComposePipeline}
             onClearSelection={() => setSelectedSubsectionContent(undefined)}
             onClose={() => {
               setSelectedNode(null);
@@ -1578,6 +1641,7 @@ export default function App() {
                 }
               }}
               onRunSkillQueue={(skillNames, content) => handleSkillRunQueue(skillNames, content)}
+              onComposePipeline={handleComposePipeline}
               onClearSelection={() => setSelectedSubsectionContent(undefined)}
               onClose={handleCloseDrawer}
               isRunning={isRunning}

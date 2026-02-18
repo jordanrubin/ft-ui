@@ -1586,11 +1586,119 @@ async def toggle_exclude(node_id: str):
 
 # --- plan synthesis endpoint ---
 
+class PipelineStep(BaseModel):
+    """a single step in a composed pipeline."""
+    skill: str
+    target: str  # node ID or "$N" reference
+    mode: str | None = None
+    reason: str
+
+
+class PipelineSpec(BaseModel):
+    """a composed pipeline specification."""
+    rationale: str
+    steps: list[PipelineStep]
+
+
+class PipelineComposeRequest(BaseModel):
+    """request to compose a pipeline."""
+    node_id: str | None = None  # optional focus hint
+
+
+class PipelineComposeResponse(BaseModel):
+    """response from pipeline compose."""
+    pipeline: PipelineSpec
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
 class PlanRequest(BaseModel):
     """request to synthesize a plan."""
     goal: Optional[str] = None  # override goal, else use root content
     save_to_claude: bool = True  # save to ~/.claude/plans/
     answers: dict[str, dict[str, str]] = {}  # node_id -> {subsection_id: answer}
+
+
+@app.post("/pipeline/compose", response_model=PipelineComposeResponse)
+async def compose_pipeline(req: PipelineComposeRequest):
+    """compose a custom insight pipeline by analyzing the graph."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    if not state.canvas.root_id:
+        raise HTTPException(status_code=400, detail="canvas has no root")
+
+    # Build graph summary
+    outline = state.canvas.export_outline_with_ids()
+    stats = state.canvas.get_statistics()
+
+    # Build skill catalog
+    skill_list = state.skill_loader.list_skills()
+    skill_catalog = "\n".join(
+        f"- {s.name}: {s.description}" for s in skill_list
+    )
+
+    # Focus hint
+    focus_hint = ""
+    if req.node_id and req.node_id in state.canvas.nodes:
+        node = state.canvas.nodes[req.node_id]
+        focus_hint = f"\nFocus hint: The user has selected node id={req.node_id} ({node.operation or node.type.value}). Consider targeting this area."
+
+    prompt = f"""<task>
+You are analyzing a reasoning graph to compose a custom insight pipeline.
+Study the graph structure, identify what has been explored and what gaps remain,
+then design a 3-6 step pipeline of skills targeting specific nodes.
+
+Available skills:
+{skill_catalog}
+
+Mode inflections (optional per step):
+- critical / positive (valence)
+- internal / external (locus)
+- near / far (distance)
+- coarse / fine (grain)
+- descriptive / prescriptive (register)
+- surface / underlying (depth)
+
+Graph state:
+{outline}
+
+Statistics:
+{json.dumps(stats, indent=2)}
+{focus_hint}
+
+Rules:
+- Design 3-6 steps. Each step should build on what came before.
+- Target specific nodes by ID, or use $N to reference the result of step N (1-indexed).
+- Don't repeat skills that have already been used on the same branch unless adding a new mode.
+- End with a synthesize step to compress findings.
+- Output ONLY raw JSON matching this schema:
+{{"rationale": "string", "steps": [{{"skill": "string", "target": "node_id_or_$N", "mode": "optional_mode", "reason": "string"}}]}}
+</task>"""
+
+    result = await state.client.complete(prompt)
+
+    # Parse JSON from response
+    try:
+        # Try to extract JSON from markdown code block first
+        import re
+        json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', result.text)
+        json_str = json_match.group(1) if json_match else result.text.strip()
+        parsed = json.loads(json_str)
+        pipeline = PipelineSpec(**parsed)
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to parse pipeline from Claude response: {e}",
+        )
+
+    return PipelineComposeResponse(
+        pipeline=pipeline,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cost_usd=result.cost_usd,
+    )
 
 
 @app.post("/canvas/synthesize-plan", response_model=NodeResponse)

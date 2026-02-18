@@ -1,4 +1,4 @@
-import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus } from '../types/canvas';
+import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus, PipelineComposeResponse } from '../types/canvas';
 
 const API_BASE = '/api';
 
@@ -314,6 +314,15 @@ export const planApi = {
     request<CanvasNode>('/canvas/synthesize-plan', {
       method: 'POST',
       body: JSON.stringify({ goal, save_to_claude: saveToClaude, answers }),
+    }),
+};
+
+// Pipeline operations
+export const pipelineApi = {
+  compose: (nodeId?: string) =>
+    request<PipelineComposeResponse>('/pipeline/compose', {
+      method: 'POST',
+      body: JSON.stringify({ node_id: nodeId }),
     }),
 };
 

@@ -82,6 +82,7 @@ interface SkillsPaneProps {
   selectedContent?: string; // If a subsection is selected
   onRunSkill: (skillName: string, content?: string, mode?: Mode) => void;
   onRunSkillQueue?: (skillNames: string[], content?: string) => void;
+  onComposePipeline?: () => void;
   onClearSelection?: () => void;
   onClose: () => void;
   isRunning: boolean;
@@ -95,6 +96,7 @@ export default function SkillsPane({
   selectedContent,
   onRunSkill,
   onRunSkillQueue,
+  onComposePipeline,
   onClearSelection,
   onClose,
   isRunning,
@@ -487,6 +489,53 @@ export default function SkillsPane({
                     </button>
                   );
                 })}
+                {onComposePipeline && (
+                  <button
+                    onClick={onComposePipeline}
+                    disabled={isRunning}
+                    title="Claude analyzes the graph and composes a custom multi-step pipeline"
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      marginBottom: '4px',
+                      background: '#1a1528',
+                      border: '1px solid #6d28d9',
+                      borderRadius: '6px',
+                      cursor: isRunning ? 'not-allowed' : 'pointer',
+                      textAlign: 'left',
+                      transition: 'all 0.15s ease',
+                      opacity: isRunning ? 0.6 : 1,
+                    }}
+                    onMouseOver={(e) => {
+                      if (!isRunning) {
+                        e.currentTarget.style.background = '#2d1f42';
+                        e.currentTarget.style.borderColor = '#8b5cf6';
+                      }
+                    }}
+                    onMouseOut={(e) => {
+                      if (!isRunning) {
+                        e.currentTarget.style.background = '#1a1528';
+                        e.currentTarget.style.borderColor = '#6d28d9';
+                      }
+                    }}
+                  >
+                    <div style={{
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      color: '#c4b5fd',
+                      marginBottom: '3px',
+                    }}>
+                      Compose pipeline...
+                    </div>
+                    <div style={{
+                      fontSize: '10px',
+                      color: '#7c3aed',
+                      lineHeight: 1.3,
+                    }}>
+                      Claude reads the graph and designs a custom sequence
+                    </div>
+                  </button>
+                )}
               </div>
             )}
 

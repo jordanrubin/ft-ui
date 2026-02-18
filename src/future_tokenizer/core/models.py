@@ -681,6 +681,31 @@ class Canvas:
         render_node(self.root_id)
         return "\n".join(lines)
 
+    def export_outline_with_ids(self) -> str:
+        """export canvas as plain text outline with node IDs.
+
+        Format: "    - [@excavate id=abc123] Found three core assumptions..."
+        Used by pipeline compose to let Claude reference specific nodes.
+        """
+        if not self.root_id:
+            return ""
+
+        lines = []
+
+        def render_node(nid: str, indent: int = 0) -> None:
+            node = self.nodes.get(nid)
+            if not node:
+                return
+            prefix = "    " * indent
+            bullet = f"{indent + 1}." if indent == 0 else "-"
+            label = node.operation or node.type.value
+            lines.append(f"{prefix}{bullet} [{label} id={nid}] {node.content_compressed}")
+            for cid in node.children_ids:
+                render_node(cid, indent + 1)
+
+        render_node(self.root_id)
+        return "\n".join(lines)
+
     def to_dict(self) -> dict:
         """serialize to dict for json (excludes undo/redo stacks)."""
         d = {
