@@ -11,6 +11,67 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
+function PlanToolbar({ content, planPath }: { content: string; planPath?: string | null }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [content]);
+
+  return (
+    <div
+      style={{
+        marginBottom: '12px',
+        padding: '10px 12px',
+        background: '#161b22',
+        border: '1px solid #30363d',
+        borderRadius: '6px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+      }}
+    >
+      <button
+        onClick={handleCopy}
+        style={{
+          padding: '6px 12px',
+          background: copied ? '#238636' : '#21262d',
+          border: '1px solid #30363d',
+          borderRadius: '4px',
+          color: copied ? '#fff' : '#c9d1d9',
+          cursor: 'pointer',
+          fontSize: '12px',
+          fontWeight: 500,
+          whiteSpace: 'nowrap',
+          transition: 'background 0.2s',
+        }}
+      >
+        {copied ? 'Copied!' : 'Copy plan'}
+      </button>
+      {planPath && (
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            color: '#8b949e',
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={planPath}
+        >
+          {planPath}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface NodeDrawerProps {
   node: CanvasNode | null;
   parentNode: CanvasNode | null;
@@ -632,6 +693,10 @@ export default function NodeDrawer({
           </div>
         ) : (
           <div>
+            {/* Plan node toolbar: copy button + disk path */}
+            {node.type === 'plan' && (
+              <PlanToolbar content={node.content_full} planPath={node.plan_path} />
+            )}
             {/* Use SubsectionViewer for structured skill responses */}
             {node.type === 'operation' && isStructuredResponse(node.content_full) ? (
               <SubsectionViewer

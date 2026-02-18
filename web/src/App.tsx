@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 
 import CanvasView from './components/CanvasView';
@@ -6,6 +6,7 @@ import NodeDrawer from './components/NodeDrawer';
 import SkillsPane from './components/SkillsPane';
 import TutorialHint from './components/TutorialHint';
 import Login from './components/Login';
+import PipelineProgress, { type PipelineStepState } from './components/PipelineProgress';
 import { canvasApi, nodeApi, skillApi, linkApi, templateApi, planApi, planFileApi, pipelineApi, type PlanFileInfo } from './api/client';
 import type { Canvas, CanvasNode, SkillInfo, TemplateInfo, CanvasListItem, Mode } from './types/canvas';
 
@@ -28,6 +29,11 @@ export default function App() {
     startTime: number;
   }>>(new Map());
   const [error, setError] = useState<string | null>(null);
+  const [pipelineState, setPipelineState] = useState<{
+    rationale: string;
+    steps: PipelineStepState[];
+  } | null>(null);
+  const pipelineStepsRef = useRef<PipelineStepState[]>([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
     const stored = localStorage.getItem('rf-web-search-enabled');
     return stored === null ? true : stored === 'true';
@@ -490,63 +496,113 @@ export default function App() {
   }, [refreshCanvas, canvas]);
 
   const handleComposePipeline = useCallback(async () => {
-    const opId = `compose-${Date.now()}`;
-    startOperation(opId, 'composing pipeline...');
+    const composeOpId = `compose-${Date.now()}`;
+    startOperation(composeOpId, 'composing pipeline...');
     setError(null);
 
     (async () => {
       try {
-        // Step 1: Compose pipeline
-        updateOperationStage(opId, 'waiting');
+        // 1. Compose phase — show spinner via runningOps
+        updateOperationStage(composeOpId, 'waiting');
         const { pipeline } = await pipelineApi.compose(selectedNode?.id ?? undefined);
+        endOperation(composeOpId);
 
-        // Step 2: Execute steps sequentially
-        const resultNodes: Record<string, string> = {}; // "$1" -> actual node ID
-        endOperation(opId);
+        // 2. Initialize pipeline progress UI
+        const initialSteps: PipelineStepState[] = pipeline.steps.map(s => ({
+          ...s,
+          status: 'pending' as const,
+        }));
+        pipelineStepsRef.current = initialSteps;
+        setPipelineState({ rationale: pipeline.rationale, steps: initialSteps });
 
-        for (let i = 0; i < pipeline.steps.length; i++) {
-          const step = pipeline.steps[i];
-          // Resolve target
-          let targetId = step.target;
-          if (targetId.startsWith('$')) {
-            const resolved = resultNodes[targetId];
-            if (!resolved) {
-              setError(`Pipeline step ${i + 1}: unresolved reference ${targetId}`);
-              return;
-            }
-            targetId = resolved;
+        // Helper: update step status in ref and trigger React state update
+        const updateStep = (index: number, status: PipelineStepState['status'], error?: string) => {
+          pipelineStepsRef.current = pipelineStepsRef.current.map((s, i) =>
+            i === index ? { ...s, status, error } : s
+          );
+          setPipelineState(prev => prev ? { ...prev, steps: [...pipelineStepsRef.current] } : null);
+        };
+
+        // 3. DAG execution
+        const resultNodes: Record<string, string> = {}; // "$1" -> node ID
+
+        function getDeps(target: string): number[] {
+          const deps: number[] = [];
+          for (const m of target.matchAll(/\$(\d+)/g)) {
+            deps.push(parseInt(m[1]) - 1); // 0-indexed
           }
-
-          const stepOpId = `compose-step-${i}-${Date.now()}`;
-          const label = `${step.skill}${step.mode ? ` [${step.mode}]` : ''}: ${step.reason}`;
-          startOperation(stepOpId, label);
-          updateOperationStage(stepOpId, 'waiting');
-
-          try {
-            const params: Record<string, unknown> = step.mode ? { mode: step.mode } : {};
-            const newNode = await skillApi.run(step.skill, targetId, params);
-            updateOperationStage(stepOpId, 'processing');
-            await refreshCanvas();
-            resultNodes[`$${i + 1}`] = newNode.id;
-          } finally {
-            endOperation(stepOpId);
-          }
+          return deps;
         }
 
-        // Select final node
-        const lastKey = `$${pipeline.steps.length}`;
-        if (resultNodes[lastKey]) {
-          const updated = await canvasApi.get();
-          setCanvas(updated);
-          const finalNode = updated.nodes[resultNodes[lastKey]];
-          if (finalNode) {
-            setSelectedNode(finalNode);
+        function getReady(): number[] {
+          return pipelineStepsRef.current
+            .map((_, i) => i)
+            .filter(i => {
+              if (pipelineStepsRef.current[i].status !== 'pending') return false;
+              const deps = getDeps(pipeline.steps[i].target);
+              return deps.every(d => {
+                const depStatus = pipelineStepsRef.current[d].status;
+                return depStatus === 'completed';
+              });
+            });
+        }
+
+        // Execute waves until no more steps are ready
+        while (true) {
+          const ready = getReady();
+          if (ready.length === 0) break;
+
+          // Mark ready steps as running
+          for (const i of ready) updateStep(i, 'running');
+
+          // Run all ready steps in parallel
+          const results = await Promise.allSettled(
+            ready.map(async (i) => {
+              const step = pipeline.steps[i];
+              let targetId = step.target;
+              // Resolve $N references
+              const refMatch = targetId.match(/^\$(\d+)$/);
+              if (refMatch) {
+                targetId = resultNodes[`$${refMatch[1]}`];
+              }
+              const params: Record<string, unknown> = step.mode ? { mode: step.mode } : {};
+              const newNode = await skillApi.run(step.skill, targetId, params);
+              return { index: i, nodeId: newNode.id };
+            })
+          );
+
+          // Process results
+          for (const result of results) {
+            if (result.status === 'fulfilled') {
+              resultNodes[`$${result.value.index + 1}`] = result.value.nodeId;
+              updateStep(result.value.index, 'completed');
+            } else {
+              const idx = ready[results.indexOf(result)];
+              const errMsg = result.reason instanceof Error ? result.reason.message : 'Failed';
+              updateStep(idx, 'failed', errMsg);
+            }
+          }
+
+          await refreshCanvas();
+        }
+
+        // 4. Select final completed node
+        const lastCompleted = [...pipelineStepsRef.current]
+          .reverse()
+          .findIndex(s => s.status === 'completed');
+        if (lastCompleted >= 0) {
+          const lastIdx = pipelineStepsRef.current.length - 1 - lastCompleted;
+          const lastNodeId = resultNodes[`$${lastIdx + 1}`];
+          if (lastNodeId) {
+            const updated = await canvasApi.get();
+            setCanvas(updated);
+            const finalNode = updated.nodes[lastNodeId];
+            if (finalNode) setSelectedNode(finalNode);
           }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Pipeline composition failed');
-      } finally {
-        endOperation(opId);
+        endOperation(composeOpId);
       }
     })();
   }, [selectedNode, refreshCanvas]);
@@ -1438,8 +1494,17 @@ export default function App() {
           {showSidebar ? '◀' : '▶'}
         </button>
 
-        {/* Running operations indicator - non-blocking, bottom right */}
-        {isRunning && (
+        {/* Pipeline progress overlay — replaces per-step runningOps during pipeline execution */}
+        {pipelineState && (
+          <PipelineProgress
+            rationale={pipelineState.rationale}
+            steps={pipelineState.steps}
+            onDismiss={() => setPipelineState(null)}
+          />
+        )}
+
+        {/* Running operations indicator - non-blocking, bottom right (hidden when pipeline progress is showing) */}
+        {isRunning && !pipelineState && (
           <div
             style={{
               position: 'absolute',

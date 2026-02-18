@@ -17,6 +17,7 @@ export interface CanvasNode {
   input_tokens?: number;
   output_tokens?: number;
   cost_usd?: number;
+  plan_path?: string | null;
 }
 
 export interface Canvas {

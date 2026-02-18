@@ -131,9 +131,15 @@ class NodeResponse(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    plan_path: Optional[str] = None
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
+        # For plan nodes, context_snapshot[0] holds the file path
+        plan_path = None
+        if node.type.value == "plan" and node.context_snapshot:
+            plan_path = node.context_snapshot[0]
+
         return cls(
             id=node.id,
             type=node.type.value,
@@ -151,6 +157,7 @@ class NodeResponse(BaseModel):
             input_tokens=getattr(node, 'input_tokens', 0),
             output_tokens=getattr(node, 'output_tokens', 0),
             cost_usd=getattr(node, 'cost_usd', 0.0),
+            plan_path=plan_path,
         )
 
 
@@ -1648,7 +1655,7 @@ async def compose_pipeline(req: PipelineComposeRequest):
     prompt = f"""<task>
 You are analyzing a reasoning graph to compose a custom insight pipeline.
 Study the graph structure, identify what has been explored and what gaps remain,
-then design a 3-6 step pipeline of skills targeting specific nodes.
+then design a 5-12 step pipeline of skills targeting specific nodes.
 
 Available skills:
 {skill_catalog}
@@ -1669,10 +1676,20 @@ Statistics:
 {focus_hint}
 
 Rules:
-- Design 3-6 steps. Each step should build on what came before.
+- Design 5-12 steps. Build a thorough investigation, not a shallow survey.
+- Structure in phases: EXPLORE (breadth — multiple skills on different nodes in parallel),
+  then DEEPEN (depth — follow up on the most interesting findings from earlier steps),
+  then SYNTHESIZE (compress everything into insight).
 - Target specific nodes by ID, or use $N to reference the result of step N (1-indexed).
-- Don't repeat skills that have already been used on the same branch unless adding a new mode.
-- End with a synthesize step to compress findings.
+- Steps that don't reference each other's $N outputs will run in parallel.
+  Example: step 1 targets node X, step 2 targets node Y, step 3 targets $1 and $2
+  → steps 1 and 2 run in parallel, step 3 waits for both.
+- Go deep: when an early step (e.g., excavate) reveals assumptions, follow up with
+  stressify or antithesize on that result ($N). Don't just fan out — follow threads.
+- Don't repeat skills already used on the same branch unless adding a new mode.
+- End with a synthesize step that references a late-stage result to compress all findings.
+- In the rationale, explain the structure: why these phases, why this ordering,
+  what gaps you identified, and what insight trajectory you expect.
 - Output ONLY raw JSON matching this schema:
 {{"rationale": "string", "steps": [{{"skill": "string", "target": "node_id_or_$N", "mode": "optional_mode", "reason": "string"}}]}}
 </task>"""
