@@ -76,6 +76,9 @@ export default function App() {
   }, []);
   const isMobile = windowWidth < 768;
 
+  // Active mode for skill runs (shared between SkillsPane and NodeDrawer combobox)
+  const [activeMode, setActiveMode] = useState<Mode | null>(null);
+
   // Sidebar shows skills pane when a node is selected
   const showSkillsPane = selectedNode !== null;
 
@@ -156,6 +159,7 @@ export default function App() {
         } else {
           // Single click: open content panel and focus
           setSelectedNodeIds(new Set());
+          setSelectedSubsectionContent(undefined);
           await nodeApi.setFocus(nodeId);
           await refreshCanvas();
           // Open the node in content panel
@@ -176,10 +180,12 @@ export default function App() {
   const handleDeselectNode = useCallback(() => {
     setSelectedNode(null);
     setSelectedNodeIds(new Set());
+    setSelectedSubsectionContent(undefined);
   }, []);
 
   const handleCloseDrawer = useCallback(() => {
     setSelectedNode(null);
+    setSelectedSubsectionContent(undefined);
   }, []);
 
   // Helper to load answers from localStorage for a node
@@ -729,6 +735,8 @@ export default function App() {
             node={selectedNode}
             skills={skills}
             selectedContent={selectedSubsectionContent}
+            activeMode={activeMode}
+            onModeChange={setActiveMode}
             onRunSkill={async (skillName, content, mode) => {
               if (skillName.startsWith('chat:')) {
                 // Freeform chat
@@ -767,7 +775,7 @@ export default function App() {
         >
           {/* Header */}
           <div style={{ padding: '16px', borderBottom: '1px solid #30363d' }}>
-            <h1 style={{ margin: 0, fontSize: '18px', color: '#fff' }}>Runeforge Canvas</h1>
+            <h1 style={{ margin: 0, fontSize: '18px', color: '#fff' }}>Future Tokenizer</h1>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#666' }}>
               reasoning-as-graph
             </p>
@@ -1032,7 +1040,7 @@ export default function App() {
           {showCanvasPicker && canvasList.length > 0 && (
             <div style={{ padding: '12px', borderBottom: '1px solid #30363d', background: '#0d1117' }}>
               <h3 style={{ margin: '0 0 8px', fontSize: '12px', color: '#666', textTransform: 'uppercase' }}>
-                ~/.runeforge-canvas/ (load existing)
+                ~/.future-tokenizer/ (load existing)
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '200px', overflow: 'auto' }}>
                 {canvasList.map((c) => (
@@ -1243,6 +1251,17 @@ export default function App() {
               </div>
               <div style={{ color: '#666', marginBottom: '8px' }}>
                 {Object.keys(canvas.nodes).length} nodes
+                {(() => {
+                  const nodes = Object.values(canvas.nodes);
+                  const totalTokens = nodes.reduce((sum, n) => sum + (n.input_tokens ?? 0) + (n.output_tokens ?? 0), 0);
+                  if (totalTokens === 0) return null;
+                  const fmt = totalTokens >= 1_000_000 ? `${(totalTokens / 1_000_000).toFixed(1)}M` : totalTokens >= 1_000 ? `${(totalTokens / 1_000).toFixed(1)}k` : String(totalTokens);
+                  return (
+                    <span style={{ marginLeft: '8px' }} title="Input + output tokens across all nodes">
+                      · {fmt} tokens
+                    </span>
+                  );
+                })()}
               </div>
               <button
                 onClick={handleSaveCanvas}
@@ -1425,6 +1444,7 @@ export default function App() {
           skills={skills}
           onClose={handleCloseDrawer}
           onSkillRun={handleSkillRun}
+          activeMode={activeMode}
           onSkillRunOnSelection={handleSkillRunOnSelection}
           onChatSubmit={handleChatSubmit}
           webSearchEnabled={webSearchEnabled}
@@ -1451,6 +1471,7 @@ export default function App() {
           skills={skills}
           onClose={handleCloseDrawer}
           onSkillRun={handleSkillRun}
+          activeMode={activeMode}
           onSkillRunOnSelection={handleSkillRunOnSelection}
           onChatSubmit={handleChatSubmit}
           webSearchEnabled={webSearchEnabled}
@@ -1472,6 +1493,8 @@ export default function App() {
               node={selectedNode}
               skills={skills}
               selectedContent={selectedSubsectionContent}
+              activeMode={activeMode}
+              onModeChange={setActiveMode}
               onRunSkill={async (skillName, content, mode) => {
                 if (skillName.startsWith('chat:')) {
                   const prompt = skillName.slice(5);

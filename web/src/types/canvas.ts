@@ -14,6 +14,9 @@ export interface CanvasNode {
   invocation_target: string | null;
   invocation_prompt: string | null;
   used_web_search?: boolean;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
 }
 
 export interface Canvas {
@@ -57,6 +60,9 @@ export interface Statistics {
   leaf_count: number;
   node_types: Record<string, number>;
   operations_used: Record<string, number>;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_usd: number;
 }
 
 export type Mode = 'positive' | 'critical' | 'internal' | 'external' | 'near' | 'far' | 'coarse' | 'fine' | 'descriptive' | 'prescriptive' | 'surface' | 'underlying';
@@ -65,6 +71,7 @@ export interface ModeAxis {
   name: string;
   modes: [Mode, Mode];
   labels: [string, string];
+  color: string;
 }
 
 export interface AppStatus {

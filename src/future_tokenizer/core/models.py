@@ -1,4 +1,4 @@
-"""core data model for runeforge canvas.
+"""core data model for future tokenizer.
 
 graph of thinking nodes, not linear chat.
 """
@@ -55,6 +55,13 @@ class CanvasNode:
     invocation_prompt: Optional[str] = None  # for chat: user's prompt; for skills: skill name
     used_web_search: bool = False  # whether web search was enabled for this response
 
+    # token usage tracking
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cost_usd: float = 0.0
+
     @classmethod
     def create_root(cls, content: str) -> CanvasNode:
         """create a root node with initial question/context."""
@@ -75,6 +82,11 @@ class CanvasNode:
         invocation_target: Optional[str] = None,
         invocation_prompt: Optional[str] = None,
         used_web_search: bool = False,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        cost_usd: float = 0.0,
     ) -> CanvasNode:
         """create an operation result node."""
         return cls(
@@ -88,6 +100,11 @@ class CanvasNode:
             invocation_target=invocation_target,
             invocation_prompt=invocation_prompt,
             used_web_search=used_web_search,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            cost_usd=cost_usd,
         )
 
     @classmethod
@@ -107,6 +124,11 @@ class CanvasNode:
         content: str,
         parent_id: str,
         source_ids: list[str],
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
+        cost_usd: float = 0.0,
     ) -> CanvasNode:
         """create a plan node synthesized from multiple sources."""
         return cls(
@@ -117,6 +139,11 @@ class CanvasNode:
             content_full=content,
             parent_id=parent_id,
             source_ids=source_ids,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+            cost_usd=cost_usd,
         )
 
     def update_content(self, new_content: str, compress_length: int = DEFAULT_COMPRESSION_LENGTH) -> None:
@@ -572,6 +599,9 @@ class Canvas:
             "leaf_count": leaf_count,
             "node_types": type_counts,
             "operations_used": operation_counts,
+            "total_input_tokens": sum(n.input_tokens for n in self.nodes.values()),
+            "total_output_tokens": sum(n.output_tokens for n in self.nodes.values()),
+            "total_cost_usd": sum(n.cost_usd for n in self.nodes.values()),
         }
 
     # --- export formats ---
@@ -855,7 +885,10 @@ def get_template(name: str) -> Optional[CanvasTemplate]:
 
 def get_canvas_dir() -> Path:
     """get the default canvas storage directory."""
-    canvas_dir = Path.home() / ".runeforge-canvas"
+    canvas_dir = Path.home() / ".future-tokenizer"
+    old_dir = Path.home() / ".runeforge-canvas"
+    if old_dir.exists() and not canvas_dir.exists():
+        old_dir.rename(canvas_dir)
     canvas_dir.mkdir(parents=True, exist_ok=True)
     return canvas_dir
 

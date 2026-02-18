@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from runeforge_canvas.core.models import Canvas, CanvasNode
+from future_tokenizer.core.models import Canvas, CanvasNode
 
 
 class TestReadFileContent:
     """tests for the _read_file_content server helper."""
 
     def test_read_markdown_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
             f.write("# Hello\n\nSome markdown content")
@@ -24,7 +24,7 @@ class TestReadFileContent:
         assert "Some markdown content" in result
 
     def test_read_txt_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
             f.write("plain text content")
@@ -33,7 +33,7 @@ class TestReadFileContent:
         assert result == "plain text content"
 
     def test_read_python_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
             f.write("def hello():\n    return 'world'")
@@ -42,7 +42,7 @@ class TestReadFileContent:
         assert "def hello():" in result
 
     def test_read_json_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
             f.write('{"key": "value"}')
@@ -51,7 +51,7 @@ class TestReadFileContent:
         assert '"key"' in result
 
     def test_caps_at_50k(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".txt", mode="w", delete=False) as f:
             f.write("x" * 60000)
@@ -60,7 +60,7 @@ class TestReadFileContent:
         assert len(result) == 50000
 
     def test_rejects_unknown_binary(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".bin", mode="wb", delete=False) as f:
             # Write bytes that are invalid UTF-8 sequences
@@ -70,7 +70,7 @@ class TestReadFileContent:
                 _read_file_content(Path(f.name))
 
     def test_read_csv_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".csv", mode="w", delete=False) as f:
             f.write("name,age\nAlice,30\nBob,25")
@@ -79,7 +79,7 @@ class TestReadFileContent:
         assert "Alice,30" in result
 
     def test_read_toml_file(self):
-        from runeforge_canvas.api.server import _read_file_content
+        from future_tokenizer.api.server import _read_file_content
 
         with tempfile.NamedTemporaryFile(suffix=".toml", mode="w", delete=False) as f:
             f.write('[project]\nname = "test"')
@@ -127,7 +127,7 @@ class TestUploadEndpoint:
 
     @pytest.fixture(autouse=True)
     def _setup_client(self):
-        from runeforge_canvas.api.server import app, state
+        from future_tokenizer.api.server import app, state
         self.client = TestClient(app)
         # reset state between tests
         state.canvas = None

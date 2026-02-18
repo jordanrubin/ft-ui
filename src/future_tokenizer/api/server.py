@@ -1,4 +1,4 @@
-"""fastapi server for runeforge canvas.
+"""fastapi server for future tokenizer.
 
 exposes core operations as REST endpoints for react frontend.
 """
@@ -31,13 +31,13 @@ from ..core.models import (
     get_template,
 )
 from ..core.skills import SkillLoader, SkillChain, get_default_loader
-from ..core.client import ClaudeClient, MockClient, ClientProtocol
+from ..core.client import ClaudeClient, MockClient, ClientProtocol, CompletionResult
 
 
 # --- configuration ---
 
 DEFAULT_AUTOSAVE_INTERVAL = 30  # seconds
-SESSION_FILE = ".runeforge-session.json"
+SESSION_FILE = ".ft-session.json"
 
 
 # --- pydantic models for api ---
@@ -128,6 +128,9 @@ class NodeResponse(BaseModel):
     invocation_target: Optional[str] = None
     invocation_prompt: Optional[str] = None
     used_web_search: bool = False
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
     @classmethod
     def from_node(cls, node: CanvasNode) -> "NodeResponse":
@@ -145,6 +148,9 @@ class NodeResponse(BaseModel):
             invocation_target=node.invocation_target,
             invocation_prompt=node.invocation_prompt,
             used_web_search=getattr(node, 'used_web_search', False),
+            input_tokens=getattr(node, 'input_tokens', 0),
+            output_tokens=getattr(node, 'output_tokens', 0),
+            cost_usd=getattr(node, 'cost_usd', 0.0),
         )
 
 
@@ -203,6 +209,9 @@ class StatisticsResponse(BaseModel):
     leaf_count: int
     node_types: dict[str, int]
     operations_used: dict[str, int]
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_usd: float = 0.0
 
 
 class SkillInfo(BaseModel):
@@ -395,8 +404,8 @@ async def lifespan(app: FastAPI):
 # --- app ---
 
 app = FastAPI(
-    title="runeforge canvas api",
-    description="REST API for runeforge canvas graph-based thinking",
+    title="future tokenizer api",
+    description="REST API for future tokenizer graph-based thinking",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -494,11 +503,16 @@ IMPORTANT: Only the ITEMS section should use numbered **bold** formatting. The p
 
         initial_node = CanvasNode.create_operation(
             operation="chat",
-            content=result,
+            content=result.text,
             parent_id=root.id,
             context_snapshot=[root.id],
             invocation_target=req.root_content[:500],
             invocation_prompt="[auto] initial analysis",
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cache_read_tokens=result.cache_read_tokens,
+            cache_creation_tokens=result.cache_creation_tokens,
+            cost_usd=result.cost_usd,
         )
         state.canvas.add_node(initial_node)
         state.canvas.set_focus(initial_node.id)
@@ -1048,11 +1062,16 @@ async def run_skill(req: SkillRun):
     # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
-        content=result,
+        content=result.text,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
         invocation_prompt=skill.display_name,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cache_read_tokens=result.cache_read_tokens,
+        cache_creation_tokens=result.cache_creation_tokens,
+        cost_usd=result.cost_usd,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -1104,11 +1123,16 @@ FOCUS: Apply this skill ONLY to the selected content below. The tree context abo
     # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
-        content=result,
+        content=result.text,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=req.selected_content[:500] + ("..." if len(req.selected_content) > 500 else ""),
         invocation_prompt=skill.display_name,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cache_read_tokens=result.cache_read_tokens,
+        cache_creation_tokens=result.cache_creation_tokens,
+        cost_usd=result.cost_usd,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -1154,11 +1178,16 @@ The following context includes {len(req.node_ids)} selected nodes that the user 
     parent_id = req.node_ids[0]
     new_node = CanvasNode.create_operation(
         operation=skill.display_name,
-        content=result,
+        content=result.text,
         parent_id=parent_id,
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
         invocation_prompt=f"{skill.display_name} on {len(req.node_ids)} nodes",
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cache_read_tokens=result.cache_read_tokens,
+        cache_creation_tokens=result.cache_creation_tokens,
+        cost_usd=result.cost_usd,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -1188,15 +1217,25 @@ async def run_chain(req: ChainRun):
     context_nodes = state.canvas.get_context_for_operation(focus.id)
     context_text = state.format_context(context_nodes)
 
-    # run chain
+    # run chain — accumulate tokens across steps
     current_input = context_text
     results = []
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cache_read = 0
+    total_cache_creation = 0
+    total_cost = 0.0
 
     for skill, params in resolved:
         prompt = skill.build_prompt(current_input, params)
         result = await state.client.complete(prompt)
-        results.append(f"## {skill.display_name}\n\n{result}")
-        current_input = result
+        results.append(f"## {skill.display_name}\n\n{result.text}")
+        current_input = result.text
+        total_input_tokens += result.input_tokens
+        total_output_tokens += result.output_tokens
+        total_cache_read += result.cache_read_tokens
+        total_cache_creation += result.cache_creation_tokens
+        total_cost += result.cost_usd
 
     # create result node with invocation tracking
     combined = "\n\n---\n\n".join(results)
@@ -1207,6 +1246,11 @@ async def run_chain(req: ChainRun):
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
         invocation_prompt=chain.display_name,
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
+        cache_read_tokens=total_cache_read,
+        cache_creation_tokens=total_cache_creation,
+        cost_usd=total_cost,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -1267,12 +1311,17 @@ IMPORTANT: Only the ITEMS section should use numbered **bold** formatting. The p
     # create result node with invocation tracking
     new_node = CanvasNode.create_operation(
         operation="chat",
-        content=result,
+        content=result.text,
         parent_id=focus.id,
         context_snapshot=[n.id for n in context_nodes],
         invocation_target=context_text[:500] + ("..." if len(context_text) > 500 else ""),
         invocation_prompt=req.prompt,
         used_web_search=req.enable_web_search,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cache_read_tokens=result.cache_read_tokens,
+        cache_creation_tokens=result.cache_creation_tokens,
+        cost_usd=result.cost_usd,
     )
     state.canvas.add_node(new_node)
     state.canvas.set_focus(new_node.id)
@@ -1642,9 +1691,14 @@ Generate the plan now:"""
 
     # create plan node
     plan_node = CanvasNode.create_plan(
-        content=result,
+        content=result.text,
         parent_id=state.canvas.root_id,
         source_ids=source_ids,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cache_read_tokens=result.cache_read_tokens,
+        cache_creation_tokens=result.cache_creation_tokens,
+        cost_usd=result.cost_usd,
     )
     state.canvas.add_node(plan_node)
     state.canvas.set_focus(plan_node.id)
@@ -1663,7 +1717,7 @@ Generate the plan now:"""
         filename = f"{slug}-{timestamp}.md"
 
         plan_path = plans_dir / filename
-        plan_path.write_text(result)
+        plan_path.write_text(result.text)
 
         # add file path to response metadata
         plan_node.context_snapshot = [str(plan_path)]
@@ -1679,7 +1733,7 @@ def main():
     import argparse
     import uvicorn
 
-    parser = argparse.ArgumentParser(description="runeforge canvas api server")
+    parser = argparse.ArgumentParser(description="future tokenizer api server")
     parser.add_argument("--host", default="0.0.0.0", help="host to bind")
     parser.add_argument("--port", "-p", type=int, default=8000, help="port to bind")
     parser.add_argument("--skills-dir", "-s", help="path to skills directory")
@@ -1709,7 +1763,7 @@ def main():
     )
 
     uvicorn.run(
-        "runeforge_canvas.api.server:app",
+        "future_tokenizer.api.server:app",
         host=args.host,
         port=args.port,
         reload=args.reload,

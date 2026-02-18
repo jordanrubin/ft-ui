@@ -1,4 +1,4 @@
-"""textual widgets for runeforge canvas."""
+"""textual widgets for future tokenizer."""
 
 from .minimap import Minimap, NodeClicked
 from .path import ActivePath, NodeWidget, NodeExpanded

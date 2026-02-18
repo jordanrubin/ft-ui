@@ -1,16 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { CanvasNode, SkillInfo } from '../types/canvas';
+import type { CanvasNode, SkillInfo, Mode } from '../types/canvas';
 import SubsectionViewer from './SubsectionViewer';
 import { isStructuredResponse } from '../utils/responseParser';
 import { Markdown } from '../utils/markdown';
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
 
 interface NodeDrawerProps {
   node: CanvasNode | null;
   parentNode: CanvasNode | null;
   skills: SkillInfo[];
   onClose: () => void;
-  onSkillRun: (skillName: string) => void;
+  onSkillRun: (skillName: string, mode?: Mode) => void;
+  activeMode?: Mode | null;
   onSkillRunOnSelection: (skillName: string, content: string) => void;
   onChatSubmit: (prompt: string) => void;
   webSearchEnabled: boolean;
@@ -36,7 +43,8 @@ export default function NodeDrawer({
   parentNode,
   skills,
   onClose,
-  onSkillRun: _onSkillRun,
+  onSkillRun,
+  activeMode: activeModeProp,
   onSkillRunOnSelection: _onSkillRunOnSelection,
   onChatSubmit,
   webSearchEnabled: _webSearchEnabled,
@@ -57,7 +65,6 @@ export default function NodeDrawer({
   skillsPane,
 }: NodeDrawerProps) {
   // Unused props - kept for API compatibility
-  void _onSkillRun;
   void _onLinkCreate;
   void _linkedNodes;
   void _backlinks;
@@ -68,6 +75,45 @@ export default function NodeDrawer({
   const [showFullParent, setShowFullParent] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
   const [showMobileSkills, setShowMobileSkills] = useState(false);
+  const [showSkillDropdown, setShowSkillDropdown] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Filter skills based on input text
+  const filteredSkills = chatInput.trim()
+    ? skills.filter(s =>
+        s.name.toLowerCase().includes(chatInput.trim().toLowerCase()) ||
+        s.display_name.toLowerCase().includes(chatInput.trim().toLowerCase()) ||
+        s.description.toLowerCase().includes(chatInput.trim().toLowerCase())
+      )
+    : skills;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
+      ) {
+        setShowSkillDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Reset highlight when filtered list changes
+  useEffect(() => {
+    setHighlightedIndex(-1);
+  }, [chatInput]);
+
+  const handleSkillSelect = useCallback((skillName: string) => {
+    onSkillRun(skillName, activeModeProp ?? undefined);
+    setChatInput('');
+    setShowSkillDropdown(false);
+    setHighlightedIndex(-1);
+  }, [onSkillRun, activeModeProp]);
 
   const hasMultiSelection = selectedNodeIds.size > 0;
   const selectedNodes = Array.from(selectedNodeIds).map((id) => allNodes[id]).filter(Boolean);
@@ -254,9 +300,45 @@ export default function NodeDrawer({
 
   const handleChatSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (chatInput.trim()) {
-      onChatSubmit(chatInput.trim());
-      setChatInput('');
+    const text = chatInput.trim();
+    if (!text) return;
+
+    // If a skill is highlighted in the dropdown, run it
+    if (showSkillDropdown && highlightedIndex >= 0 && highlightedIndex < filteredSkills.length) {
+      handleSkillSelect(filteredSkills[highlightedIndex].name);
+      return;
+    }
+
+    // If input exactly matches a skill name (with or without @), run it
+    const normalized = text.replace(/^@/, '').toLowerCase();
+    const exactMatch = skills.find(s => s.name.toLowerCase() === normalized);
+    if (exactMatch) {
+      handleSkillSelect(exactMatch.name);
+      return;
+    }
+
+    // Otherwise, send as chat
+    onChatSubmit(text);
+    setChatInput('');
+    setShowSkillDropdown(false);
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSkillDropdown || filteredSkills.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = highlightedIndex < filteredSkills.length - 1 ? highlightedIndex + 1 : 0;
+      setHighlightedIndex(next);
+      dropdownRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = highlightedIndex > 0 ? highlightedIndex - 1 : filteredSkills.length - 1;
+      setHighlightedIndex(next);
+      dropdownRef.current?.children[next]?.scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Escape') {
+      setShowSkillDropdown(false);
+      setHighlightedIndex(-1);
     }
   };
 
@@ -327,6 +409,17 @@ export default function NodeDrawer({
               title="Used web search"
             >
               web
+            </span>
+          )}
+          {((node.input_tokens ?? 0) > 0 || (node.output_tokens ?? 0) > 0) && (
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#484f58',
+              }}
+              title={`Input: ${node.input_tokens?.toLocaleString() ?? 0} | Output: ${node.output_tokens?.toLocaleString() ?? 0}`}
+            >
+              {formatTokens(node.input_tokens ?? 0)} in / {formatTokens(node.output_tokens ?? 0)} out
             </span>
           )}
         </div>
@@ -459,49 +552,6 @@ export default function NodeDrawer({
         </div>
       )}
 
-      {/* Chat input - PROMINENT, at top */}
-      <form onSubmit={handleChatSubmit} style={{
-        padding: '12px 16px',
-        borderBottom: '1px solid #30363d',
-        background: '#0d1117',
-      }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            type="text"
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            placeholder="Ask a follow-up question..."
-            disabled={isRunning}
-            style={{
-              flex: 1,
-              padding: '10px 12px',
-              background: '#21262d',
-              border: '1px solid #30363d',
-              borderRadius: '8px',
-              color: '#e0e0e0',
-              fontSize: '14px',
-            }}
-          />
-          <button
-            type="submit"
-            disabled={isRunning || !chatInput.trim()}
-            style={{
-              padding: '10px 16px',
-              background: isRunning ? '#21262d' : '#238636',
-              border: 'none',
-              borderRadius: '8px',
-              color: '#fff',
-              cursor: isRunning ? 'not-allowed' : 'pointer',
-              opacity: isRunning ? 0.6 : 1,
-              fontSize: '14px',
-              fontWeight: 500,
-            }}
-          >
-            {isRunning ? '...' : 'Send'}
-          </button>
-        </div>
-      </form>
-
       {/* User prompt for chat operations */}
       {node.type === 'operation' && node.operation === 'chat' && node.invocation_prompt && (
         <div
@@ -527,7 +577,7 @@ export default function NodeDrawer({
         </div>
       )}
 
-      {/* Content */}
+      {/* Content — scrollable middle */}
       <div style={{ flex: 1, overflow: 'auto', padding: '20px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}>
         {isEditing ? (
           <div>
@@ -610,7 +660,7 @@ export default function NodeDrawer({
           </div>
         )}
 
-        {/* Run on section - at bottom */}
+        {/* Run on section - at bottom of content */}
         {node.type === 'operation' && (node.invocation_target || parentNode) && (
           <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
             <div
@@ -659,21 +709,134 @@ export default function NodeDrawer({
         )}
       </div>
 
-      {/* Loading indicator */}
+      {/* Loading indicator — thin bar above input */}
       {isRunning && (
         <div
           style={{
-            padding: '12px 16px',
-            background: '#21262d',
+            padding: '6px 16px',
+            background: '#161b22',
             borderTop: '1px solid #30363d',
-            color: '#58a6ff',
-            fontSize: '13px',
+            color: '#8b5cf6',
+            fontSize: '12px',
             textAlign: 'center',
+            letterSpacing: '0.05em',
           }}
         >
-          Running operation...
+          Running...
         </div>
       )}
+
+      {/* Combobox input — fixed at bottom */}
+      <form onSubmit={handleChatSubmit} style={{
+        padding: '12px 16px',
+        borderTop: '1px solid #30363d',
+        background: '#0d1117',
+        position: 'relative',
+        flexShrink: 0,
+      }}>
+        {/* Skill dropdown — opens upward into content area */}
+        {showSkillDropdown && !isRunning && filteredSkills.length > 0 && (
+          <div
+            ref={dropdownRef}
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: '12px',
+              right: '12px',
+              marginBottom: '0',
+              background: '#161b22',
+              border: '1px solid #30363d',
+              borderBottom: 'none',
+              borderRadius: '8px 8px 0 0',
+              maxHeight: '280px',
+              overflowY: 'auto',
+              zIndex: 50,
+              boxShadow: '0 -8px 24px rgba(0,0,0,0.5)',
+            }}
+          >
+            {filteredSkills.map((skill, i) => (
+              <div
+                key={skill.name}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSkillSelect(skill.name);
+                }}
+                onMouseEnter={() => setHighlightedIndex(i)}
+                style={{
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  background: i === highlightedIndex ? '#21262d' : 'transparent',
+                  borderBottom: i < filteredSkills.length - 1 ? '1px solid #1c2128' : 'none',
+                  transition: 'background 0.1s',
+                }}
+              >
+                <div style={{
+                  fontSize: '13px',
+                  fontWeight: 500,
+                  color: i === highlightedIndex ? '#8b5cf6' : '#c9d1d9',
+                }}>
+                  @{skill.name}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#484f58',
+                  marginTop: '2px',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}>
+                  {skill.description}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={chatInput}
+            onChange={(e) => {
+              setChatInput(e.target.value);
+              setShowSkillDropdown(true);
+            }}
+            onFocus={() => setShowSkillDropdown(true)}
+            onKeyDown={handleInputKeyDown}
+            placeholder="Ask a question or pick a skill..."
+            disabled={isRunning}
+            autoComplete="off"
+            style={{
+              flex: 1,
+              padding: '10px 12px',
+              background: '#21262d',
+              border: `1px solid ${showSkillDropdown ? '#8b5cf6' : '#30363d'}`,
+              borderRadius: showSkillDropdown && filteredSkills.length > 0 ? '0 0 8px 8px' : '8px',
+              color: '#e0e0e0',
+              fontSize: '14px',
+              boxSizing: 'border-box',
+              transition: 'border-color 0.15s',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={isRunning || !chatInput.trim()}
+            style={{
+              padding: '10px 12px',
+              background: 'transparent',
+              border: 'none',
+              color: chatInput.trim() && !isRunning ? '#8b5cf6' : '#484f58',
+              cursor: isRunning || !chatInput.trim() ? 'default' : 'pointer',
+              fontSize: '18px',
+              flexShrink: 0,
+              lineHeight: 1,
+              transition: 'color 0.15s',
+            }}
+            title="Send"
+          >
+            {isRunning ? '\u00B7\u00B7\u00B7' : '\u2191'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

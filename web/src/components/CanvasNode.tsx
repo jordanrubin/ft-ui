@@ -32,10 +32,40 @@ const operationColors: Record<string, string> = {
   chat: '#607d8b',
 };
 
+// Mode axis colors (matching SkillsPane toggle colors)
+const modeColors: Record<string, string> = {
+  positive: '#f97316', critical: '#f97316',
+  internal: '#06b6d4', external: '#06b6d4',
+  near: '#22c55e', far: '#22c55e',
+  coarse: '#eab308', fine: '#eab308',
+  descriptive: '#ec4899', prescriptive: '#ec4899',
+  surface: '#8b5cf6', underlying: '#8b5cf6',
+};
+
+const modeLabels: Record<string, string> = {
+  positive: '+', critical: '−',
+  internal: 'in', external: 'ex',
+  near: 'nr', far: 'fr',
+  coarse: 'co', fine: 'fi',
+  descriptive: 'is', prescriptive: 'ought',
+  surface: 'sf', underlying: 'dp',
+};
+
+// Parse "@excavate-positive" → { base: "@excavate", mode: "positive" }
+function parseOperation(op: string): { base: string; mode: string | null } {
+  for (const m of Object.keys(modeColors)) {
+    if (op.endsWith(`-${m}`)) {
+      return { base: op.slice(0, -(m.length + 1)), mode: m };
+    }
+  }
+  return { base: op, mode: null };
+}
+
 function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
   const { node, isActive, isFocused, isSelected } = data as CanvasNodeData;
   const colors = typeColors[node.type] || typeColors.user;
-  const operationColor = node.operation ? operationColors[node.operation] || '#666' : null;
+  const parsed = node.operation ? parseOperation(node.operation) : null;
+  const operationColor = parsed ? operationColors[parsed.base] || '#666' : null;
 
   // Determine border color: multi-selected > focused > active > default
   const borderColor = isSelected ? '#22c55e' : isFocused ? '#ffd700' : isActive ? '#4dabf7' : colors.border;
@@ -74,21 +104,37 @@ function CanvasNodeComponent({ data, selected }: NodeProps<CanvasNodeType2>) {
       )}
 
       {/* Operation badge */}
-      {node.operation && (
-        <div
-          style={{
-            display: 'inline-block',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            background: operationColor || '#666',
-            color: '#fff',
-            fontSize: '11px',
-            fontWeight: 600,
-            marginBottom: '6px',
-            textTransform: 'lowercase',
-          }}
-        >
-          {node.operation}
+      {node.operation && parsed && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px' }}>
+          <div
+            style={{
+              display: 'inline-block',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              background: operationColor || '#666',
+              color: '#fff',
+              fontSize: '11px',
+              fontWeight: 600,
+              textTransform: 'lowercase',
+            }}
+          >
+            {parsed.base}
+          </div>
+          {parsed.mode && (
+            <div
+              style={{
+                display: 'inline-block',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                background: modeColors[parsed.mode],
+                color: '#fff',
+                fontSize: '10px',
+                fontWeight: 600,
+              }}
+            >
+              {modeLabels[parsed.mode] || parsed.mode}
+            </div>
+          )}
         </div>
       )}
 

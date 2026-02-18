@@ -4,7 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.core.models import (
+from future_tokenizer.core.models import (
     Canvas,
     CanvasNode,
     NodeType,
@@ -103,6 +103,81 @@ class TestCanvasNode:
         assert restored.type == original.type
         assert restored.operation == original.operation
         assert restored.context_snapshot == original.context_snapshot
+
+    def test_token_fields_defaults(self):
+        """token fields default to zero."""
+        node = CanvasNode.create_operation(
+            operation="@excavate",
+            content="result",
+            parent_id="p1",
+            context_snapshot=["p1"],
+        )
+        assert node.input_tokens == 0
+        assert node.output_tokens == 0
+        assert node.cache_read_tokens == 0
+        assert node.cache_creation_tokens == 0
+        assert node.cost_usd == 0.0
+
+    def test_token_fields_set(self):
+        """token fields can be set via create_operation."""
+        node = CanvasNode.create_operation(
+            operation="@excavate",
+            content="result",
+            parent_id="p1",
+            context_snapshot=["p1"],
+            input_tokens=1500,
+            output_tokens=800,
+            cache_read_tokens=200,
+            cache_creation_tokens=50,
+            cost_usd=0.042,
+        )
+        assert node.input_tokens == 1500
+        assert node.output_tokens == 800
+        assert node.cache_read_tokens == 200
+        assert node.cache_creation_tokens == 50
+        assert node.cost_usd == 0.042
+
+    def test_token_fields_roundtrip(self):
+        """token fields survive to_dict/from_dict."""
+        original = CanvasNode.create_operation(
+            operation="chat",
+            content="response",
+            parent_id="p1",
+            context_snapshot=["p1"],
+            input_tokens=2000,
+            output_tokens=1000,
+            cost_usd=0.05,
+        )
+        d = original.to_dict()
+        restored = CanvasNode.from_dict(d)
+        assert restored.input_tokens == 2000
+        assert restored.output_tokens == 1000
+        assert restored.cost_usd == 0.05
+
+    def test_backward_compat_missing_token_fields(self):
+        """old canvases without token fields load with defaults."""
+        d = {
+            "id": "abc12345",
+            "type": "operation",
+            "content_compressed": "test",
+            "content_full": "test content",
+            "parent_id": "root1234",
+            "operation": "@excavate",
+            "children_ids": [],
+            "created_at": "2024-01-01T00:00:00",
+            "links_to": [],
+            "context_snapshot": [],
+            "excluded": False,
+            "source_ids": [],
+            "invocation_target": None,
+            "invocation_prompt": None,
+            "used_web_search": False,
+        }
+        # should not crash — missing token fields use defaults
+        node = CanvasNode.from_dict(d)
+        assert node.input_tokens == 0
+        assert node.output_tokens == 0
+        assert node.cost_usd == 0.0
 
 
 class TestCanvas:
@@ -565,6 +640,39 @@ class TestCanvas:
         assert stats["node_types"]["user"] == 1
         assert stats["node_types"]["operation"] == 1
         assert stats["operations_used"]["@excavate"] == 1
+
+    def test_get_statistics_token_aggregates(self):
+        """get_statistics includes total token usage."""
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        child1 = CanvasNode.create_operation(
+            operation="@excavate",
+            content="result1",
+            parent_id=root.id,
+            context_snapshot=[root.id],
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.02,
+        )
+        canvas.add_node(child1)
+
+        child2 = CanvasNode.create_operation(
+            operation="chat",
+            content="result2",
+            parent_id=root.id,
+            context_snapshot=[root.id],
+            input_tokens=2000,
+            output_tokens=800,
+            cost_usd=0.03,
+        )
+        canvas.add_node(child2)
+
+        stats = canvas.get_statistics()
+        assert stats["total_input_tokens"] == 3000
+        assert stats["total_output_tokens"] == 1300
+        assert abs(stats["total_cost_usd"] - 0.05) < 0.001
 
     # --- export tests ---
 

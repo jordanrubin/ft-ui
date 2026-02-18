@@ -1,7 +1,7 @@
 """Tests for canvas format and skill exclusions."""
 
 import pytest
-from runeforge_canvas.core.canvas_format import (
+from future_tokenizer.core.canvas_format import (
     should_use_canvas_format,
     CANVAS_FORMAT_EXCLUDED_SKILLS,
 )

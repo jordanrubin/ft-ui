@@ -1,4 +1,4 @@
-# runeforge canvas server setup
+# future tokenizer server setup
 
 ## quick start
 
@@ -37,7 +37,7 @@ cd web && npm install
 
 ```bash
 # terminal 1: API
-.venv/bin/runeforge-api --mock
+.venv/bin/ft-api --mock
 
 # terminal 2: React
 cd web && npm run dev
@@ -45,14 +45,14 @@ cd web && npm run dev
 
 ### 3. nginx config (optional, for auth)
 
-config at `/etc/nginx/sites-available/runeforge-canvas`:
+config at `/etc/nginx/sites-available/future-tokenizer`:
 
 ```nginx
 server {
     listen 3080;
     server_name _;
 
-    auth_basic "Runeforge Canvas";
+    auth_basic "Future Tokenizer";
     auth_basic_user_file /etc/nginx/.htpasswd-runeforge;
 
     location / {
@@ -78,7 +78,7 @@ sudo htpasswd -c /etc/nginx/.htpasswd-runeforge jr
 
 enable and reload:
 ```bash
-sudo ln -sf /etc/nginx/sites-available/runeforge-canvas /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/future-tokenizer /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -99,10 +99,10 @@ nginx (:3080) -- basic auth
 
 ```bash
 # API server
-runeforge-api --mock          # use mock client (no real API calls)
-runeforge-api                 # use real Claude API
-runeforge-api --port 9000     # custom port
+ft-api --mock          # use mock client (no real API calls)
+ft-api                 # use real Claude API
+ft-api --port 9000     # custom port
 
 # TUI (alternative to web)
-runeforge-canvas --mock       # terminal UI
+future-tokenizer --mock       # terminal UI
 ```

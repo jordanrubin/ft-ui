@@ -1,4 +1,4 @@
-"""cli entrypoint for runeforge canvas."""
+"""cli entrypoint for future tokenizer."""
 
 import argparse
 from pathlib import Path
@@ -8,7 +8,7 @@ from .tui.app import run
 
 def main():
     parser = argparse.ArgumentParser(
-        description="runeforge canvas - graph-based thinking for plans"
+        description="future tokenizer - graph-based thinking for plans"
     )
     parser.add_argument(
         "canvas",

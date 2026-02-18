@@ -1,6 +1,6 @@
 # agent deployment guide
 
-step-by-step instructions for deploying runeforge canvas on a VPS or local machine. designed for AI agents to follow.
+step-by-step instructions for deploying future tokenizer on a VPS or local machine. designed for AI agents to follow.
 
 ## prerequisites
 
@@ -44,7 +44,7 @@ python3 -m venv .venv
 
 verify installation:
 ```bash
-.venv/bin/runeforge-api --help
+.venv/bin/ft-api --help
 ```
 
 ## step 3: install frontend dependencies
@@ -65,7 +65,7 @@ option A - use the start script:
 option B - start manually (two terminals):
 ```bash
 # terminal 1: API server
-.venv/bin/runeforge-api
+.venv/bin/ft-api
 
 # terminal 2: frontend
 cd web && npm run dev
@@ -73,8 +73,8 @@ cd web && npm run dev
 
 option C - background with nohup:
 ```bash
-nohup .venv/bin/runeforge-api > /tmp/runeforge-api.log 2>&1 &
-cd web && nohup npm run dev > /tmp/runeforge-web.log 2>&1 &
+nohup .venv/bin/ft-api > /tmp/ft-api.log 2>&1 &
+cd web && nohup npm run dev > /tmp/ft-web.log 2>&1 &
 ```
 
 ## step 5: verify
@@ -101,13 +101,13 @@ sudo apt install nginx apache2-utils
 sudo htpasswd -c /etc/nginx/.htpasswd-runeforge <username>
 ```
 
-create `/etc/nginx/sites-available/runeforge-canvas`:
+create `/etc/nginx/sites-available/future-tokenizer`:
 ```nginx
 server {
     listen 3080;
     server_name _;
 
-    auth_basic "Runeforge Canvas";
+    auth_basic "Future Tokenizer";
     auth_basic_user_file /etc/nginx/.htpasswd-runeforge;
 
     location / {
@@ -128,13 +128,13 @@ server {
 
 enable and start:
 ```bash
-sudo ln -sf /etc/nginx/sites-available/runeforge-canvas /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/future-tokenizer /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
 ## step 7: optional - runeforge skills
 
-runeforge canvas uses skill files from a sibling directory. for basic functionality, the bundled public skills work. for extended skills:
+future tokenizer uses skill files from a sibling directory. for basic functionality, the bundled public skills work. for extended skills:
 
 ```bash
 # clone runeforge skills repo (if you have access)
@@ -150,7 +150,7 @@ export RUNEFORGE_SKILLS_DIR=/path/to/your/skills
 ## stopping servers
 
 ```bash
-pkill -f 'runeforge-api|vite'
+pkill -f 'ft-api|vite'
 ```
 
 or use the script:
@@ -163,7 +163,7 @@ or use the script:
 ### API won't start
 ```bash
 # check logs
-cat /tmp/runeforge-api.log
+cat /tmp/ft-api.log
 
 # common fix: port in use
 lsof -i :8000
@@ -173,7 +173,7 @@ kill <pid>
 ### frontend won't start
 ```bash
 # check logs
-cat /tmp/runeforge-web.log
+cat /tmp/ft-web.log
 
 # common fix: reinstall node modules
 cd web && rm -rf node_modules && npm install
@@ -196,14 +196,14 @@ claude "hello"  # should respond without auth errors
 ```
 
 ### hooks interference
-runeforge canvas uses pure text generation with no tool calls. it explicitly disables all tools when connecting to the API, so tool-use hooks (Bash, file operations, etc.) should not fire.
+future tokenizer uses pure text generation with no tool calls. it explicitly disables all tools when connecting to the API, so tool-use hooks (Bash, file operations, etc.) should not fire.
 
 if you still see permission issues, check your claude code hooks:
 ```bash
 cat ~/.claude/settings.json | grep -A 20 hooks
 ```
 
-runeforge only needs the ability to send prompts and receive text responses - no file access, no bash, no MCP servers.
+future tokenizer only needs the ability to send prompts and receive text responses - no file access, no bash, no MCP servers.
 
 ## ports summary
 

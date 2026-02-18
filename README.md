@@ -1,4 +1,4 @@
-# runeforge canvas
+# future tokenizer
 
 graph-based plan-building IDE with cognitive operations.
 
@@ -16,7 +16,7 @@ but plan-building in linear text is brutal:
 - you can't branch "what if we did X instead of Y" without losing the original
 - you can't cross-link dependencies between steps
 
-runeforge canvas fixes this.
+future tokenizer fixes this.
 
 ## workflow
 
@@ -48,7 +48,7 @@ runeforge canvas fixes this.
 ## install
 
 ```bash
-pip install runeforge-canvas
+pip install future-tokenizer
 ```
 
 or from source:
@@ -62,8 +62,8 @@ pip install -e .
 ## usage
 
 ```bash
-runeforge-canvas                  # new canvas
-runeforge-canvas my-plan.json     # load existing
+future-tokenizer                  # new canvas
+future-tokenizer my-plan.json     # load existing
 ```
 
 ### keybindings

@@ -1,11 +1,11 @@
-"""pytest fixtures for runeforge canvas tests."""
+"""pytest fixtures for future tokenizer tests."""
 
 import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.core.models import Canvas, CanvasNode
-from runeforge_canvas.core.skills import Skill
+from future_tokenizer.core.models import Canvas, CanvasNode
+from future_tokenizer.core.skills import Skill
 
 
 @pytest.fixture

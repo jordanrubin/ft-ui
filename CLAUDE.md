@@ -13,7 +13,7 @@ Never skip tests. If you catch yourself fixing something without a test, stop an
 
 ## Project Structure
 
-- `src/runeforge_canvas/` - Python backend
+- `src/future_tokenizer/` - Python backend
   - `core/` - models, skills, client
   - `api/` - FastAPI server
   - `tui/` - Textual TUI (alternative frontend)
@@ -31,7 +31,7 @@ Never skip tests. If you catch yourself fixing something without a test, stop an
 # Or manually:
 cd /home/jr/projects/ft-ui
 source .venv/bin/activate
-python -m runeforge_canvas.api.server  # API on :8000
+python -m future_tokenizer.api.server  # API on :8000
 
 cd web
 npm run dev  # Vite on :3000

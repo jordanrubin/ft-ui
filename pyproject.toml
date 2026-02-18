@@ -1,5 +1,5 @@
 [project]
-name = "runeforge-canvas"
+name = "future-tokenizer"
 version = "0.1.0"
 description = "graph-based plan-building IDE with runeforge cognitive operations"
 requires-python = ">=3.11"
@@ -22,8 +22,8 @@ web = [
 ]
 
 [project.scripts]
-runeforge-canvas = "runeforge_canvas.__main__:main"
-runeforge-api = "runeforge_canvas.api.server:main"
+future-tokenizer = "future_tokenizer.__main__:main"
+ft-api = "future_tokenizer.api.server:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -4,8 +4,8 @@ import pytest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
-from runeforge_canvas.core.models import Canvas, CanvasNode
-from runeforge_canvas.core.skills import Skill, SkillLoader, CompositeSkillLoader
+from future_tokenizer.core.models import Canvas, CanvasNode
+from future_tokenizer.core.skills import Skill, SkillLoader, CompositeSkillLoader
 
 
 def _make_tree():
@@ -53,7 +53,7 @@ class TestSelectionContextInclusion:
 
     def test_format_context_includes_all_ancestors(self):
         """format_context should produce text containing all ancestor content."""
-        from runeforge_canvas.api.server import AppState
+        from future_tokenizer.api.server import AppState
 
         canvas, root, excavate, stress = _make_tree()
         app_state = AppState(mock=True)
@@ -73,7 +73,7 @@ class TestSelectionContextInclusion:
         """the final prompt for a selection run should contain both tree context and selection text."""
         canvas, root, excavate, stress = _make_tree()
 
-        from runeforge_canvas.api.server import AppState
+        from future_tokenizer.api.server import AppState
 
         app_state = AppState(mock=True)
         app_state.canvas = canvas
@@ -116,7 +116,7 @@ FOCUS: Apply this skill ONLY to the selected content below. The tree context abo
         """user answers should be included in selection prompts."""
         canvas, root, excavate, stress = _make_tree()
 
-        from runeforge_canvas.api.server import AppState
+        from future_tokenizer.api.server import AppState
 
         app_state = AppState(mock=True)
         app_state.canvas = canvas

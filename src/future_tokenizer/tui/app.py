@@ -1,4 +1,4 @@
-"""runeforge canvas: main textual application.
+"""future tokenizer: main textual application.
 
 graph-based thinking environment for runeforge skills.
 """
@@ -32,11 +32,11 @@ MAX_RETRIES = 2
 RETRY_DELAY = 1.0  # seconds
 
 
-class RuneforgeCanvas(App):
+class FutureTokenizer(App):
     """main application."""
 
-    TITLE = "runeforge canvas"
-    SUB_TITLE = "~/.runeforge-canvas/"
+    TITLE = "future tokenizer"
+    SUB_TITLE = "~/.future-tokenizer/"
 
     CSS = """
     Screen {
@@ -487,7 +487,7 @@ respond thoughtfully to the user's question about this context. be specific and 
         if not self.canvas_path:
             is_new_path = True
             # create default path based on first few words of root
-            save_dir = Path.home() / ".runeforge-canvas"
+            save_dir = Path.home() / ".future-tokenizer"
             save_dir.mkdir(parents=True, exist_ok=True)
 
             # generate name from root content
@@ -513,8 +513,8 @@ respond thoughtfully to the user's question about this context. be specific and 
     def action_save(self) -> None:
         """save the canvas."""
         if not self.canvas_path:
-            # default to ~/.runeforge-canvas/{name}.json
-            save_dir = Path.home() / ".runeforge-canvas"
+            # default to ~/.future-tokenizer/{name}.json
+            save_dir = Path.home() / ".future-tokenizer"
             save_dir.mkdir(parents=True, exist_ok=True)
             self.canvas_path = save_dir / f"{self.canvas.name}.json"
 
@@ -551,8 +551,8 @@ respond thoughtfully to the user's question about this context. be specific and 
         self._auto_save()
 
     def action_load(self) -> None:
-        """load a canvas from ~/.runeforge-canvas/."""
-        save_dir = Path.home() / ".runeforge-canvas"
+        """load a canvas from ~/.future-tokenizer/."""
+        save_dir = Path.home() / ".future-tokenizer"
         if not save_dir.exists():
             self.notify("no saved canvases found", severity="warning")
             return
@@ -590,7 +590,7 @@ respond thoughtfully to the user's question about this context. be specific and 
         text = "\n\n".join(lines)
 
         # copy to clipboard via pyperclip or just save to file
-        export_path = Path.home() / ".runeforge-canvas" / "export.md"
+        export_path = Path.home() / ".future-tokenizer" / "export.md"
         export_path.parent.mkdir(parents=True, exist_ok=True)
         export_path.write_text(text)
 
@@ -649,7 +649,7 @@ respond thoughtfully to the user's question about this context. be specific and 
         plan_text = "\n\n".join(lines)
 
         # create execution directory
-        exec_dir = Path.home() / ".runeforge-canvas" / "executions"
+        exec_dir = Path.home() / ".future-tokenizer" / "executions"
         exec_dir.mkdir(parents=True, exist_ok=True)
 
         # write plan file
@@ -858,8 +858,8 @@ when done, summarize what was completed vs what diverged from the plan."""
 
 
 def run(canvas_path: Optional[str] = None, skills_dir: Optional[str] = None, mock: bool = False) -> None:
-    """run the runeforge canvas app."""
-    app = RuneforgeCanvas(
+    """run the future tokenizer app."""
+    app = FutureTokenizer(
         canvas_path=Path(canvas_path) if canvas_path else None,
         skills_dir=Path(skills_dir) if skills_dir else None,
         mock=mock,

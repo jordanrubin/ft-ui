@@ -41,14 +41,40 @@ const RECIPES = [
   },
 ];
 
+// Short human-readable descriptions for each mode
+const MODE_DESCRIPTIONS: Record<string, string> = {
+  positive: 'Highlight strengths, what works',
+  critical: 'Find flaws, what fails',
+  internal: 'Look inward, self-referential',
+  external: 'Look outward, contextual',
+  near: 'Immediate, concrete',
+  far: 'Long-range, abstract',
+  coarse: 'Big picture, broad strokes',
+  fine: 'Granular detail, specifics',
+  descriptive: 'What is — factual',
+  prescriptive: 'What should be — normative',
+  surface: 'Face value, as stated',
+  underlying: 'Hidden layers, implicit',
+};
+
 const MODE_AXES: ModeAxis[] = [
-  { name: 'valence', modes: ['positive', 'critical'], labels: ['+', '−'] },
-  { name: 'locus', modes: ['internal', 'external'], labels: ['in', 'ex'] },
-  { name: 'distance', modes: ['near', 'far'], labels: ['nr', 'fr'] },
-  { name: 'grain', modes: ['coarse', 'fine'], labels: ['co', 'fi'] },
-  { name: 'register', modes: ['descriptive', 'prescriptive'], labels: ['is', 'ought'] },
-  { name: 'depth', modes: ['surface', 'underlying'], labels: ['sf', 'dp'] },
+  { name: 'valence',  modes: ['positive', 'critical'],        labels: ['+', '−'],      color: '#f97316' },
+  { name: 'locus',    modes: ['internal', 'external'],        labels: ['in', 'ex'],    color: '#06b6d4' },
+  { name: 'distance', modes: ['near', 'far'],                 labels: ['nr', 'fr'],    color: '#22c55e' },
+  { name: 'grain',    modes: ['coarse', 'fine'],              labels: ['co', 'fi'],    color: '#eab308' },
+  { name: 'register', modes: ['descriptive', 'prescriptive'], labels: ['is', 'ought'], color: '#ec4899' },
+  { name: 'depth',    modes: ['surface', 'underlying'],       labels: ['sf', 'dp'],    color: '#8b5cf6' },
 ];
+
+// Strip canvas/JSON implementation details from skill descriptions shown to users
+function cleanDescription(desc: string): string {
+  return desc
+    .replace(/^Canvas-optimized\s*/i, '')
+    .replace(/\.\s*Full analysis in preamble,?\s*\w[\w\s]* in compressed JSON\.?/i, '.')
+    .replace(/\s*compressed JSON\.?/i, '.')
+    .replace(/\.\.+/g, '.')
+    .trim();
+}
 
 interface SkillsPaneProps {
   node: CanvasNode;
@@ -59,6 +85,8 @@ interface SkillsPaneProps {
   onClearSelection?: () => void;
   onClose: () => void;
   isRunning: boolean;
+  activeMode?: Mode | null;
+  onModeChange?: (mode: Mode | null) => void;
 }
 
 export default function SkillsPane({
@@ -70,11 +98,17 @@ export default function SkillsPane({
   onClearSelection,
   onClose,
   isRunning,
+  activeMode: controlledMode,
+  onModeChange,
 }: SkillsPaneProps) {
   const [queueMode, setQueueMode] = useState(false);
   const [queue, setQueue] = useState<string[]>([]);
   const [showAllSkills, setShowAllSkills] = useState(false);
-  const [activeMode, setActiveMode] = useState<Mode | null>(null);
+  const [localMode, setLocalMode] = useState<Mode | null>(null);
+
+  // Use controlled mode if provided, otherwise local state
+  const activeMode = controlledMode !== undefined ? controlledMode : localMode;
+  const setActiveMode = onModeChange ?? setLocalMode;
 
   const handleSkillClick = (skillName: string) => {
     if (queueMode) {
@@ -124,7 +158,7 @@ export default function SkillsPane({
       <button
         key={skill.name}
         onClick={() => handleSkillClick(skill.name)}
-        title={skill.description || ''}
+        title={skill.description ? cleanDescription(skill.description) : ''}
         style={{
           padding: '8px 10px',
           background: isQueued ? '#2d1f42' : '#21262d',
@@ -297,15 +331,15 @@ export default function SkillsPane({
                 <button
                   key={mode}
                   onClick={() => setActiveMode(isActive ? null : mode)}
-                  title={`${mode} (${axis.name})`}
+                  title={`${mode} — ${MODE_DESCRIPTIONS[mode] || axis.name}`}
                   style={{
                     padding: '2px 5px',
                     fontSize: '10px',
                     fontWeight: 600,
-                    background: isActive ? '#8b5cf6' : '#21262d',
-                    border: 'none',
+                    background: isActive ? axis.color : '#21262d',
+                    border: isActive ? 'none' : `1px solid ${axis.color}33`,
                     borderRadius: i === 0 ? '4px 0 0 4px' : '0 4px 4px 0',
-                    color: isActive ? '#fff' : '#6e7681',
+                    color: isActive ? '#fff' : `${axis.color}b3`,
                     cursor: 'pointer',
                     lineHeight: 1.4,
                     transition: 'all 0.1s ease',
@@ -494,56 +528,7 @@ export default function SkillsPane({
         )}
       </div>
 
-      {/* Freeform prompt */}
-      <div style={{
-        padding: '12px',
-        borderTop: '1px solid #30363d',
-        background: '#0d1117',
-      }}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const input = e.currentTarget.elements.namedItem('prompt') as HTMLInputElement;
-            if (input.value.trim()) {
-              onRunSkill('chat:' + input.value.trim(), selectedContent);
-              input.value = '';
-            }
-          }}
-          style={{ display: 'flex', gap: '8px' }}
-        >
-          <input
-            name="prompt"
-            type="text"
-            placeholder="Ask anything..."
-            disabled={isRunning}
-            style={{
-              flex: 1,
-              padding: '8px 10px',
-              background: '#21262d',
-              border: '1px solid #30363d',
-              borderRadius: '6px',
-              color: '#c9d1d9',
-              fontSize: '13px',
-            }}
-          />
-          <button
-            type="submit"
-            disabled={isRunning}
-            style={{
-              padding: '8px 12px',
-              background: '#238636',
-              border: 'none',
-              borderRadius: '6px',
-              color: '#fff',
-              fontSize: '13px',
-              cursor: isRunning ? 'not-allowed' : 'pointer',
-              opacity: isRunning ? 0.6 : 1,
-            }}
-          >
-            Go
-          </button>
-        </form>
-      </div>
+      {/* Freeform prompt removed — unified input at bottom of NodeDrawer handles both chat and skills */}
     </div>
   );
 }

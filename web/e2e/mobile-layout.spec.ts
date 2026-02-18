@@ -80,7 +80,7 @@ test.describe('Mobile portrait layout', () => {
     await page.locator('button:has-text("Skills")').click();
 
     // Chat input should still be in the DOM (may need to scroll)
-    const chatInput = page.locator('input[placeholder="Ask a follow-up question..."]');
+    const chatInput = page.locator('input[placeholder="Ask a question or pick a skill..."]');
     await expect(chatInput).toBeAttached();
   });
 

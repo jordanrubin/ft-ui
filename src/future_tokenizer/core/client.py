@@ -6,6 +6,7 @@ uses the same auth as claude code for zero-cost api calls.
 from __future__ import annotations
 
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
@@ -15,12 +16,23 @@ from claude_agent_sdk import (
 )
 
 
+@dataclass
+class CompletionResult:
+    """result from a completion call, including usage metrics."""
+    text: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cost_usd: float = 0.0
+
+
 @runtime_checkable
 class ClientProtocol(Protocol):
     """protocol for claude clients (real or mock)."""
 
-    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
-        """send prompt and return response."""
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> CompletionResult:
+        """send prompt and return response with usage metrics."""
         ...
 
 
@@ -51,7 +63,7 @@ class MockClient:
     async def __aexit__(self, *args) -> None:
         pass
 
-    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> CompletionResult:
         """return mock response based on prompt."""
         import asyncio
         self.calls.append(prompt)
@@ -63,9 +75,9 @@ class MockClient:
         prompt_lower = prompt.lower()
         for key, response in self.responses.items():
             if key.lower() in prompt_lower:
-                return response
+                return CompletionResult(text=response)
 
-        return self.default_response
+        return CompletionResult(text=self.default_response)
 
 
 class ClaudeClient:
@@ -91,7 +103,7 @@ class ClaudeClient:
     async def __aexit__(self, *args) -> None:
         pass
 
-    async def complete(self, prompt: str, enable_web_search: bool = False) -> str:
+    async def complete(self, prompt: str, enable_web_search: bool = False) -> CompletionResult:
         """send a prompt and collect the full response.
 
         creates a fresh client for each query to avoid state conflicts.
@@ -107,7 +119,7 @@ class ClaudeClient:
 
         base_opts = {
             "cwd": str(self.cwd),
-            "model": "opus",
+            "model": "sonnet",
         }
         if enable_web_search:
             options = ClaudeAgentOptions(
@@ -132,12 +144,20 @@ class ClaudeClient:
             # send the query
             await client.query(prompt)
 
-            # collect response
+            # collect response and usage
             text_parts: list[str] = []
+            usage_info: dict = {}
+            cost_usd: float = 0.0
             import logging
 
             async for event in client.receive_response():
                 logging.debug(f"event type: {type(event).__name__}, attrs: {dir(event)}")
+
+                # capture usage from ResultMessage (last event in stream)
+                if hasattr(event, "usage"):
+                    usage_info = event.usage if isinstance(event.usage, dict) else {}
+                if hasattr(event, "total_cost_usd") and event.total_cost_usd is not None:
+                    cost_usd = float(event.total_cost_usd)
 
                 # check for text content in assistant messages
                 if hasattr(event, "message") and hasattr(event.message, "content"):
@@ -161,7 +181,16 @@ class ClaudeClient:
                                 text_parts.append(block["text"])
 
             logging.debug(f"total text parts collected: {len(text_parts)}")
-            return "\n".join(text_parts) if text_parts else "(no response)"
+            text = "\n".join(text_parts) if text_parts else "(no response)"
+
+            return CompletionResult(
+                text=text,
+                input_tokens=usage_info.get("input_tokens", 0),
+                output_tokens=usage_info.get("output_tokens", 0),
+                cache_read_tokens=usage_info.get("cache_read_input_tokens", 0),
+                cache_creation_tokens=usage_info.get("cache_creation_input_tokens", 0),
+                cost_usd=cost_usd,
+            )
 
         except Exception as e:
             # capture full error info for debugging
@@ -187,7 +216,7 @@ async def run_skill(
     skill_prompt: str,
     cwd: Optional[Path] = None,
     enable_web_search: bool = False,
-) -> str:
+) -> CompletionResult:
     """convenience function to run a skill prompt.
 
     creates a client, sends the prompt, returns the result.

@@ -4,7 +4,7 @@ import pytest
 import tempfile
 from pathlib import Path
 
-from runeforge_canvas.core.skills import (
+from future_tokenizer.core.skills import (
     Skill,
     SkillInvocation,
     SkillChain,
@@ -335,6 +335,13 @@ critical body
             assert skill is not None
             assert skill.name == "excavate-critical"
             assert "critical body" in skill.body
+
+    def test_blend_skill_display_name_includes_mode(self):
+        """blend skill display_name shows mode for node badges."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            loader = self._make_loaders(tmpdir)
+            skill = loader.get_with_mode("excavate", "critical")
+            assert skill.display_name == "@excavate-critical"
 
     def test_get_with_mode_falls_back_to_base(self):
         """get_with_mode falls back to base when mode doesn't match."""

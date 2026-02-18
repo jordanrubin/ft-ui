@@ -53,7 +53,7 @@ export default function Login({ onLogin }: LoginProps) {
             textAlign: 'center',
           }}
         >
-          Runeforge Canvas
+          Future Tokenizer
         </h1>
         <p
           style={{
