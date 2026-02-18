@@ -32,6 +32,8 @@ export default function App() {
   const [pipelineState, setPipelineState] = useState<{
     rationale: string;
     steps: PipelineStepState[];
+    reflecting?: boolean;
+    reflection?: string;
   } | null>(null);
   const pipelineStepsRef = useRef<PipelineStepState[]>([]);
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
@@ -586,7 +588,26 @@ export default function App() {
           await refreshCanvas();
         }
 
-        // 4. Select final completed node
+        // 4. Reflect on pipeline run (non-fatal)
+        try {
+          setPipelineState(prev => prev ? { ...prev, reflecting: true } : null);
+          const stepResults = pipelineStepsRef.current.map((s, i) => ({
+            skill: s.skill,
+            target: s.target,
+            mode: s.mode,
+            reason: s.reason,
+            status: s.status === 'completed' ? 'completed' as const : 'failed' as const,
+            node_id: resultNodes[`$${i + 1}`],
+            error: s.error,
+          }));
+          const reflectResult = await pipelineApi.reflect(pipeline.rationale, stepResults);
+          setPipelineState(prev => prev ? { ...prev, reflecting: false, reflection: reflectResult.reflection } : null);
+        } catch (reflectErr) {
+          console.warn('Pipeline reflection failed (non-fatal):', reflectErr);
+          setPipelineState(prev => prev ? { ...prev, reflecting: false } : null);
+        }
+
+        // 5. Select final completed node
         const lastCompleted = [...pipelineStepsRef.current]
           .reverse()
           .findIndex(s => s.status === 'completed');
@@ -1499,6 +1520,8 @@ export default function App() {
           <PipelineProgress
             rationale={pipelineState.rationale}
             steps={pipelineState.steps}
+            reflecting={pipelineState.reflecting}
+            reflection={pipelineState.reflection}
             onDismiss={() => setPipelineState(null)}
           />
         )}

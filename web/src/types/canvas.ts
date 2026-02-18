@@ -103,3 +103,21 @@ export interface PipelineComposeResponse {
   output_tokens: number;
   cost_usd: number;
 }
+
+export interface PipelineStepResult {
+  skill: string;
+  target: string;
+  mode?: string;
+  reason: string;
+  status: 'completed' | 'failed';
+  node_id?: string;
+  error?: string;
+}
+
+export interface PipelineReflectResponse {
+  reflection_id: string;
+  reflection: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}

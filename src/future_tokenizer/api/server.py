@@ -9,6 +9,7 @@ import asyncio
 import json
 import os
 import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -1652,6 +1653,16 @@ async def compose_pipeline(req: PipelineComposeRequest):
         node = state.canvas.nodes[req.node_id]
         focus_hint = f"\nFocus hint: The user has selected node id={req.node_id} ({node.operation or node.type.value}). Consider targeting this area."
 
+    # Past reflections for learning loop
+    past_reflections = ""
+    if state.canvas.pipeline_reflections:
+        recent = state.canvas.pipeline_reflections[-3:]
+        parts = []
+        for r in recent:
+            parts.append(f"[{r.created_at}] ({r.completed_steps}/{r.total_steps} completed, ${r.total_cost_usd:.3f})\n{r.reflection}")
+        past_reflections = "\n\nPast pipeline reflections:\n" + "\n\n".join(parts)
+        past_reflections += "\n\nUse these reflections to improve your pipeline design. Avoid repeating mistakes and build on what worked."
+
     prompt = f"""<task>
 You are analyzing a reasoning graph to compose a custom insight pipeline.
 Study the graph structure, identify what has been explored and what gaps remain,
@@ -1674,6 +1685,7 @@ Graph state:
 Statistics:
 {json.dumps(stats, indent=2)}
 {focus_hint}
+{past_reflections}
 
 Rules:
 - Design 5-12 steps. Build a thorough investigation, not a shallow survey.
@@ -1712,6 +1724,127 @@ Rules:
 
     return PipelineComposeResponse(
         pipeline=pipeline,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cost_usd=result.cost_usd,
+    )
+
+
+class PipelineStepResult(BaseModel):
+    """result of a single pipeline step for reflection."""
+    skill: str
+    target: str
+    mode: str | None = None
+    reason: str
+    status: str  # "completed" or "failed"
+    node_id: str | None = None
+    error: str | None = None
+
+
+class PipelineReflectRequest(BaseModel):
+    """request to reflect on a completed pipeline run."""
+    rationale: str
+    steps: list[PipelineStepResult]
+
+
+class PipelineReflectResponse(BaseModel):
+    """response from pipeline reflection."""
+    reflection_id: str
+    reflection: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+
+@app.post("/pipeline/reflect", response_model=PipelineReflectResponse)
+async def reflect_pipeline(req: PipelineReflectRequest):
+    """reflect on a completed pipeline run to improve future pipelines."""
+    if not state.canvas:
+        raise HTTPException(status_code=404, detail="no canvas loaded")
+
+    # Build step summaries with full content for completed steps
+    step_details = []
+    for step in req.steps:
+        detail = f"- @{step.skill} on {step.target}"
+        if step.mode:
+            detail += f" [{step.mode}]"
+        detail += f": {step.reason}"
+        detail += f"\n  Status: {step.status}"
+        if step.status == "completed" and step.node_id and step.node_id in state.canvas.nodes:
+            node = state.canvas.nodes[step.node_id]
+            detail += f"\n  Output:\n{node.content_full}"
+        if step.status == "failed" and step.error:
+            detail += f"\n  Error: {step.error}"
+        step_details.append(detail)
+
+    step_text = "\n\n".join(step_details)
+
+    completed = sum(1 for s in req.steps if s.status == "completed")
+    failed = sum(1 for s in req.steps if s.status == "failed")
+
+    # Include last 3 past reflections for continuity
+    past_reflections_text = ""
+    if state.canvas.pipeline_reflections:
+        recent = state.canvas.pipeline_reflections[-3:]
+        parts = []
+        for r in recent:
+            parts.append(f"[{r.created_at}] ({r.completed_steps}/{r.total_steps} completed, ${r.total_cost_usd:.3f})\n{r.reflection}")
+        past_reflections_text = f"\n\nPrevious reflections:\n" + "\n\n".join(parts)
+
+    prompt = f"""<task>
+You are reviewing the results of a pipeline run on a reasoning graph.
+
+Pipeline rationale: {req.rationale}
+
+Steps and results:
+{step_text}
+
+Summary: {completed}/{len(req.steps)} completed, {failed} failed
+{past_reflections_text}
+
+Reflect on this pipeline run. Evaluate:
+1. Efficiency — was insight-per-token high or were steps redundant?
+2. Sequencing — did it follow explore→deepen→synthesize structure well?
+3. Mode selection — were mode inflections well-chosen?
+4. Coverage gaps — what important angles were missed?
+5. Recommendations for the next pipeline run
+
+Write a concise 150-300 word reflection ending with 2-3 bullet-point recommendations.
+Output ONLY the reflection text, no JSON or markdown wrappers.
+</task>"""
+
+    result = await state.client.complete(prompt)
+
+    # Compute total cost across completed step nodes
+    total_cost = sum(
+        state.canvas.nodes[s.node_id].cost_usd
+        for s in req.steps
+        if s.status == "completed" and s.node_id and s.node_id in state.canvas.nodes
+    )
+
+    from future_tokenizer.core.models import PipelineReflection
+    reflection_id = uuid.uuid4().hex[:8]
+    reflection = PipelineReflection(
+        id=reflection_id,
+        created_at=datetime.now().isoformat(),
+        pipeline_rationale=req.rationale,
+        steps_summary=[s.model_dump() for s in req.steps],
+        reflection=result.text,
+        total_steps=len(req.steps),
+        completed_steps=completed,
+        failed_steps=failed,
+        total_cost_usd=total_cost,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        cost_usd=result.cost_usd,
+    )
+
+    state.canvas.pipeline_reflections.append(reflection)
+    state.mark_dirty()
+
+    return PipelineReflectResponse(
+        reflection_id=reflection_id,
+        reflection=result.text,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
         cost_usd=result.cost_usd,

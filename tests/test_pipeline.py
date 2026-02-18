@@ -398,3 +398,282 @@ class TestPlanNodeResponse:
         )
         response = NodeResponse.from_node(node)
         assert response.plan_path is None
+
+
+class TestPipelineReflection:
+    """tests for pipeline meta-reflection feature."""
+
+    def test_reflection_to_dict_round_trip(self):
+        """PipelineReflection serializes and deserializes cleanly."""
+        from future_tokenizer.core.models import PipelineReflection
+
+        reflection = PipelineReflection(
+            id="ref001",
+            created_at="2026-02-18T10:00:00",
+            pipeline_rationale="Testing assumptions about React.",
+            steps_summary=[
+                {"skill": "excavate", "target": "abc123", "status": "completed"},
+                {"skill": "stressify", "target": "$1", "status": "failed", "error": "timeout"},
+            ],
+            reflection="The pipeline explored assumptions well but failed on stress testing.",
+            total_steps=2,
+            completed_steps=1,
+            failed_steps=1,
+            total_cost_usd=0.05,
+            input_tokens=500,
+            output_tokens=200,
+            cost_usd=0.02,
+        )
+
+        d = reflection.to_dict()
+        assert d["id"] == "ref001"
+        assert d["total_steps"] == 2
+        assert d["failed_steps"] == 1
+        assert len(d["steps_summary"]) == 2
+
+        restored = PipelineReflection.from_dict(d)
+        assert restored.id == reflection.id
+        assert restored.reflection == reflection.reflection
+        assert restored.steps_summary == reflection.steps_summary
+        assert restored.total_cost_usd == reflection.total_cost_usd
+
+    def test_canvas_save_load_with_reflections(self, temp_dir):
+        """Canvas with pipeline_reflections persists through save/load."""
+        from future_tokenizer.core.models import PipelineReflection
+
+        canvas = Canvas(name="test-reflect")
+        root = CanvasNode.create_root("test goal")
+        canvas.add_node(root)
+
+        canvas.pipeline_reflections.append(PipelineReflection(
+            id="ref001",
+            created_at="2026-02-18T10:00:00",
+            pipeline_rationale="First run rationale.",
+            steps_summary=[{"skill": "excavate", "target": root.id, "status": "completed"}],
+            reflection="Good first exploration.",
+            total_steps=1,
+            completed_steps=1,
+            failed_steps=0,
+            total_cost_usd=0.03,
+            input_tokens=300,
+            output_tokens=100,
+            cost_usd=0.01,
+        ))
+
+        path = temp_dir / "reflect-test.json"
+        canvas.save(path)
+
+        loaded = Canvas.load(path)
+        assert len(loaded.pipeline_reflections) == 1
+        r = loaded.pipeline_reflections[0]
+        assert r.id == "ref001"
+        assert r.reflection == "Good first exploration."
+        assert r.total_steps == 1
+
+    def test_backward_compat_old_canvas_no_reflections(self, temp_dir):
+        """Old canvas files without pipeline_reflections load with empty list."""
+        import json
+
+        # Simulate old-format canvas JSON (no pipeline_reflections key)
+        old_data = {
+            "name": "old-canvas",
+            "nodes": {},
+            "root_id": None,
+            "active_path": [],
+            "created_at": "2026-01-01T00:00:00",
+            "compress_length": 100,
+        }
+        path = temp_dir / "old-canvas.json"
+        with open(path, "w") as f:
+            json.dump(old_data, f)
+
+        loaded = Canvas.load(path)
+        assert loaded.pipeline_reflections == []
+
+    def test_reflections_not_in_undo_snapshot(self):
+        """Reflections are append-only — not included in undo snapshots."""
+        from future_tokenizer.core.models import PipelineReflection
+
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("goal")
+        canvas.add_node(root)
+
+        canvas.pipeline_reflections.append(PipelineReflection(
+            id="ref001",
+            created_at="2026-02-18T10:00:00",
+            pipeline_rationale="test",
+            steps_summary=[],
+            reflection="test reflection",
+            total_steps=0,
+            completed_steps=0,
+            failed_steps=0,
+            total_cost_usd=0.0,
+            input_tokens=0,
+            output_tokens=0,
+            cost_usd=0.0,
+        ))
+
+        snapshot = canvas._snapshot()
+        assert "pipeline_reflections" not in snapshot
+
+    @pytest.fixture
+    def reflect_test_client(self):
+        """FastAPI test client with canvas containing completed pipeline nodes."""
+        from fastapi.testclient import TestClient
+        from future_tokenizer.api import server
+        from future_tokenizer.api.server import AppState
+
+        state = AppState(mock=True)
+        canvas = Canvas(name="reflect-test")
+        root = CanvasNode.create_root("should I use React or Vue?")
+        canvas.add_node(root)
+
+        # Simulate pipeline result nodes
+        result_node = CanvasNode.create_operation(
+            operation="@excavate",
+            content="Found three core assumptions: ecosystem size matters, learning curve matters, performance matters.",
+            parent_id=root.id,
+            context_snapshot=[root.id],
+            input_tokens=100,
+            output_tokens=50,
+            cost_usd=0.01,
+        )
+        canvas.add_node(result_node)
+
+        failed_node_id = "failed_node_placeholder"
+
+        state.canvas = canvas
+        state.canvas_path = None
+
+        # Mock client for reflection call
+        async def mock_complete(prompt, **kwargs):
+            return CompletionResult(
+                text="The pipeline efficiently explored core assumptions. Excavate found solid ground but stressify timed out.\n\n- Use longer timeouts for stress testing\n- Follow up excavate with antithesize before stressify\n- Consider adding negspace for blind spots",
+                input_tokens=400,
+                output_tokens=150,
+                cost_usd=0.03,
+            )
+
+        state._client = MagicMock()
+        state._client.complete = mock_complete
+
+        original_state = server.state
+        server.state = state
+        client = TestClient(server.app)
+        yield client, state, root, result_node
+        server.state = original_state
+
+    def test_reflect_returns_reflection(self, reflect_test_client):
+        """POST /pipeline/reflect returns reflection and stores on canvas."""
+        client, state, root, result_node = reflect_test_client
+
+        response = client.post("/pipeline/reflect", json={
+            "rationale": "Testing assumptions about frameworks.",
+            "steps": [
+                {"skill": "excavate", "target": root.id, "reason": "Dig for assumptions", "status": "completed", "node_id": result_node.id},
+                {"skill": "stressify", "target": "$1", "reason": "Stress test findings", "status": "failed", "error": "timeout"},
+            ],
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "reflection_id" in data
+        assert "reflection" in data
+        assert len(data["reflection"]) > 0
+        assert data["input_tokens"] == 400
+        assert data["output_tokens"] == 150
+        assert data["cost_usd"] == 0.03
+
+        # Verify stored on canvas
+        assert len(state.canvas.pipeline_reflections) == 1
+        stored = state.canvas.pipeline_reflections[0]
+        assert stored.id == data["reflection_id"]
+        assert stored.total_steps == 2
+        assert stored.completed_steps == 1
+        assert stored.failed_steps == 1
+
+    def test_reflect_handles_failed_steps(self, reflect_test_client):
+        """Reflect endpoint gracefully handles all-failed pipeline."""
+        client, state, root, result_node = reflect_test_client
+
+        response = client.post("/pipeline/reflect", json={
+            "rationale": "Everything broke.",
+            "steps": [
+                {"skill": "excavate", "target": root.id, "reason": "a", "status": "failed", "error": "err1"},
+                {"skill": "stressify", "target": root.id, "reason": "b", "status": "failed", "error": "err2"},
+            ],
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "reflection" in data
+
+        stored = state.canvas.pipeline_reflections[0]
+        assert stored.completed_steps == 0
+        assert stored.failed_steps == 2
+
+    def test_reflect_no_canvas_returns_404(self, reflect_test_client):
+        """Reflect without canvas returns 404."""
+        client, state, root, result_node = reflect_test_client
+        state.canvas = None
+
+        response = client.post("/pipeline/reflect", json={
+            "rationale": "test",
+            "steps": [{"skill": "excavate", "target": "abc", "reason": "test", "status": "completed"}],
+        })
+        assert response.status_code == 404
+
+    def test_compose_includes_past_reflections(self):
+        """Compose prompt includes past reflections when they exist."""
+        from fastapi.testclient import TestClient
+        from future_tokenizer.api import server
+        from future_tokenizer.api.server import AppState
+        from future_tokenizer.core.models import PipelineReflection
+
+        state = AppState(mock=True)
+        canvas = Canvas(name="test")
+        root = CanvasNode.create_root("test goal")
+        canvas.add_node(root)
+
+        # Add past reflections
+        canvas.pipeline_reflections.append(PipelineReflection(
+            id="ref001",
+            created_at="2026-02-18T10:00:00",
+            pipeline_rationale="first run",
+            steps_summary=[{"skill": "excavate", "target": root.id, "status": "completed"}],
+            reflection="Excavate was useful. Should follow with antithesize next time.",
+            total_steps=1,
+            completed_steps=1,
+            failed_steps=0,
+            total_cost_usd=0.03,
+            input_tokens=300,
+            output_tokens=100,
+            cost_usd=0.01,
+        ))
+
+        state.canvas = canvas
+        state.canvas_path = None
+
+        captured: list[str] = []
+
+        async def mock_complete(prompt, **kwargs):
+            captured.append(prompt)
+            return CompletionResult(text=json.dumps({
+                "rationale": "test",
+                "steps": [{"skill": "excavate", "target": root.id, "reason": "test"}],
+            }))
+
+        state._client = MagicMock()
+        state._client.complete = mock_complete
+
+        original_state = server.state
+        server.state = state
+        client = TestClient(server.app)
+        try:
+            response = client.post("/pipeline/compose", json={})
+            assert response.status_code == 200
+            # Verify past reflections appear in the prompt
+            assert len(captured) == 1
+            prompt = captured[0]
+            assert "Excavate was useful" in prompt
+            assert "reflections" in prompt.lower() or "Reflections" in prompt
+        finally:
+            server.state = original_state

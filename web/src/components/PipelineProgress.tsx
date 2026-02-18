@@ -11,6 +11,8 @@ export interface PipelineStepState extends PipelineStep {
 interface PipelineProgressProps {
   rationale: string;
   steps: PipelineStepState[];
+  reflecting?: boolean;
+  reflection?: string;
   onDismiss: () => void;
 }
 
@@ -78,7 +80,7 @@ function StatusIcon({ status }: { status: StepStatus }) {
   }
 }
 
-export default function PipelineProgress({ rationale, steps, onDismiss }: PipelineProgressProps) {
+export default function PipelineProgress({ rationale, steps, reflecting, reflection, onDismiss }: PipelineProgressProps) {
   const [rationaleExpanded, setRationaleExpanded] = useState(false);
   const waves = computeWaves(steps);
 
@@ -251,6 +253,49 @@ export default function PipelineProgress({ rationale, steps, onDismiss }: Pipeli
           </div>
         ))}
       </div>
+
+      {/* Reflection section */}
+      {(reflecting || reflection) && (
+        <div
+          style={{
+            padding: '8px 14px 10px',
+            borderTop: '1px solid #21262d',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginBottom: '6px',
+            }}
+          >
+            <span style={{ color: '#a371f7', fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              {reflecting ? 'reflecting...' : 'reflection'}
+            </span>
+            <div style={{ flex: 1, height: '1px', background: '#21262d' }} />
+          </div>
+          {reflecting && (
+            <div style={{ color: '#8b949e', fontSize: '11px', fontStyle: 'italic' }}>
+              Analyzing pipeline performance...
+            </div>
+          )}
+          {reflection && (
+            <div
+              style={{
+                color: '#c9d1d9',
+                fontSize: '11px',
+                lineHeight: 1.5,
+                maxHeight: '150px',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {reflection}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pulse animation for running indicator */}
       <style>{`

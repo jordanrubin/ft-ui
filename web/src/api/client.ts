@@ -1,4 +1,4 @@
-import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus, PipelineComposeResponse } from '../types/canvas';
+import type { Canvas, CanvasNode, CanvasListItem, SkillInfo, TemplateInfo, Statistics, AppStatus, PipelineComposeResponse, PipelineStepResult, PipelineReflectResponse } from '../types/canvas';
 
 const API_BASE = '/api';
 
@@ -323,6 +323,12 @@ export const pipelineApi = {
     request<PipelineComposeResponse>('/pipeline/compose', {
       method: 'POST',
       body: JSON.stringify({ node_id: nodeId }),
+    }),
+
+  reflect: (rationale: string, steps: PipelineStepResult[]) =>
+    request<PipelineReflectResponse>('/pipeline/reflect', {
+      method: 'POST',
+      body: JSON.stringify({ rationale, steps }),
     }),
 };
 

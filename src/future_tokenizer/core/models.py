@@ -180,6 +180,31 @@ class CanvasNode:
 
 
 @dataclass
+class PipelineReflection:
+    """meta-reflection on a completed pipeline run."""
+
+    id: str
+    created_at: str
+    pipeline_rationale: str
+    steps_summary: list[dict]
+    reflection: str
+    total_steps: int
+    completed_steps: int
+    failed_steps: int
+    total_cost_usd: float
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> PipelineReflection:
+        return cls(**d)
+
+
+@dataclass
 class Canvas:
     """the full thinking graph."""
 
@@ -191,6 +216,7 @@ class Canvas:
     compress_length: int = DEFAULT_COMPRESSION_LENGTH
     source_directory: Optional[str] = None  # directory path if created from directory
     source_file: Optional[str] = None  # file path if created from single file
+    pipeline_reflections: list[PipelineReflection] = field(default_factory=list)
 
     # undo/redo - not serialized
     _undo_stack: list[dict] = field(default_factory=list, repr=False)
@@ -720,6 +746,8 @@ class Canvas:
             d["source_directory"] = self.source_directory
         if self.source_file:
             d["source_file"] = self.source_file
+        if self.pipeline_reflections:
+            d["pipeline_reflections"] = [r.to_dict() for r in self.pipeline_reflections]
         return d
 
     @classmethod
@@ -736,6 +764,9 @@ class Canvas:
         )
         for nid, nd in d.get("nodes", {}).items():
             canvas.nodes[nid] = CanvasNode.from_dict(nd)
+        canvas.pipeline_reflections = [
+            PipelineReflection.from_dict(r) for r in d.get("pipeline_reflections", [])
+        ]
         return canvas
 
     def save(self, path: Path) -> None:
